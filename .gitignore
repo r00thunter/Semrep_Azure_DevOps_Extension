@@ -1,0 +1,47 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# TypeScript
+*.js.map
+*.d.ts
+
+# Build outputs
+*.vsix
+dist/
+extension/tasks/**/*.js
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+findings.json
+findings_api.json
+sbom.json
+temp.csv
+iterationlist.csv
+azuredevpath.csv
+
+# Secrets
+*.env
+.env.local

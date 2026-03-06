@@ -1,0 +1,341 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+  "id": "semgrep-scan-task",
+  "name": "SemgrepSecurityScan",
+  "friendlyName": "Semgrep Security Scan",
+  "description": "Comprehensive security scanning with Semgrep including SAST, SCA, and License compliance with configurable ticket creation and auto-fix PR capabilities",
+  "helpMarkDown": "[Learn more about this task](https://github.com/fareportal/semgrep-ado-ext)",
+  "category": "Security",
+  "author": "Fareportal",
+  "version": {
+    "Major": 1,
+    "Minor": 0,
+    "Patch": 0
+  },
+  "instanceNameFormat": "Semgrep Security Scan",
+  "icon": "icon.png",
+  "groups": [
+    {
+      "name": "scan",
+      "displayName": "Scan Configuration",
+      "isExpanded": true
+    },
+    {
+      "name": "tickets",
+      "displayName": "Ticket Creation",
+      "isExpanded": true
+    },
+    {
+      "name": "sast",
+      "displayName": "SAST Ticket Filters",
+      "isExpanded": false
+    },
+    {
+      "name": "sca",
+      "displayName": "SCA Ticket Filters",
+      "isExpanded": false
+    },
+    {
+      "name": "license",
+      "displayName": "License Configuration",
+      "isExpanded": false
+    },
+    {
+      "name": "summary",
+      "displayName": "Summary & PR",
+      "isExpanded": false
+    },
+    {
+      "name": "advanced",
+      "displayName": "Advanced Configuration",
+      "isExpanded": false
+    }
+  ],
+  "inputs": [
+    {
+      "name": "semgrepAppToken",
+      "type": "string",
+      "label": "Semgrep App Token",
+      "defaultValue": "",
+      "required": true,
+      "helpMarkDown": "Your Semgrep API token. Store as a secure variable in Azure DevOps.",
+      "groupName": "scan"
+    },
+    {
+      "name": "scanType",
+      "type": "pickList",
+      "label": "Scan Type",
+      "defaultValue": "PR Scan",
+      "required": true,
+      "helpMarkDown": "Choose between PR Scan (differential) or Full Scan",
+      "options": {
+        "PR Scan": "PR Scan",
+        "Full Scan": "Full Scan"
+      },
+      "groupName": "scan"
+    },
+    {
+      "name": "baselineRef",
+      "type": "string",
+      "label": "Baseline Reference",
+      "defaultValue": "origin/master",
+      "required": false,
+      "helpMarkDown": "Git reference to use as baseline for PR scans (default: origin/master)",
+      "groupName": "scan",
+      "visibleRule": "scanType == 'PR Scan'"
+    },
+    {
+      "name": "semgrepOrg",
+      "type": "string",
+      "label": "Semgrep Organization",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Semgrep organization name (optional, will be fetched from token if not provided)",
+      "groupName": "scan"
+    },
+    {
+      "name": "enableTicketCreation",
+      "type": "boolean",
+      "label": "Enable Ticket Creation",
+      "defaultValue": true,
+      "required": false,
+      "helpMarkDown": "Enable creation of Azure DevOps work items for findings",
+      "groupName": "tickets"
+    },
+    {
+      "name": "ticketTypes",
+      "type": "multiSelect",
+      "label": "Ticket Types",
+      "defaultValue": "All",
+      "required": false,
+      "helpMarkDown": "Select which types of tickets to create",
+      "options": {
+        "SAST": "SAST (Source Code Analysis)",
+        "SCA": "SCA (Supply Chain Analysis)",
+        "License": "License Compliance",
+        "All": "All Types"
+      },
+      "groupName": "tickets",
+      "visibleRule": "enableTicketCreation == true"
+    },
+    {
+      "name": "sastSeverities",
+      "type": "multiSelect",
+      "label": "SAST Severities",
+      "defaultValue": "Critical,High",
+      "required": false,
+      "helpMarkDown": "Select severities for SAST ticket creation",
+      "options": {
+        "Critical": "Critical",
+        "High": "High",
+        "Medium": "Medium",
+        "Low": "Low"
+      },
+      "groupName": "sast",
+      "visibleRule": "enableTicketCreation == true && (ticketTypes == 'SAST' || ticketTypes == 'All')"
+    },
+    {
+      "name": "sastConfidences",
+      "type": "multiSelect",
+      "label": "SAST Confidences",
+      "defaultValue": "High,Medium",
+      "required": false,
+      "helpMarkDown": "Select confidence levels for SAST ticket creation",
+      "options": {
+        "High": "High",
+        "Medium": "Medium",
+        "Low": "Low"
+      },
+      "groupName": "sast",
+      "visibleRule": "enableTicketCreation == true && (ticketTypes == 'SAST' || ticketTypes == 'All')"
+    },
+    {
+      "name": "scaSeverities",
+      "type": "multiSelect",
+      "label": "SCA Severities",
+      "defaultValue": "Critical,High",
+      "required": false,
+      "helpMarkDown": "Select severities for SCA ticket creation",
+      "options": {
+        "Critical": "Critical",
+        "High": "High",
+        "Medium": "Medium",
+        "Low": "Low"
+      },
+      "groupName": "sca",
+      "visibleRule": "enableTicketCreation == true && (ticketTypes == 'SCA' || ticketTypes == 'All')"
+    },
+    {
+      "name": "scaReachabilities",
+      "type": "multiSelect",
+      "label": "SCA Reachabilities",
+      "defaultValue": "Always Reachable,Reachable,Direct",
+      "required": false,
+      "helpMarkDown": "Select reachability types for SCA ticket creation",
+      "options": {
+        "Always Reachable": "Always Reachable",
+        "Reachable": "Reachable",
+        "Conditionally Reachable": "Conditionally Reachable",
+        "Direct": "Direct",
+        "Transitive": "Transitive"
+      },
+      "groupName": "sca",
+      "visibleRule": "enableTicketCreation == true && (ticketTypes == 'SCA' || ticketTypes == 'All')"
+    },
+    {
+      "name": "useDefaultLicenseWhitelist",
+      "type": "boolean",
+      "label": "Use Default License Whitelist",
+      "defaultValue": true,
+      "required": false,
+      "helpMarkDown": "Use the default approved licenses list",
+      "groupName": "license",
+      "visibleRule": "enableTicketCreation == true && (ticketTypes == 'License' || ticketTypes == 'All')"
+    },
+    {
+      "name": "licenseWhitelistOverride",
+      "type": "multiLine",
+      "label": "Additional/Override Licenses",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Additional licenses to add to whitelist (comma or newline separated). If 'Use Default License Whitelist' is false, this becomes the complete whitelist.",
+      "groupName": "license",
+      "visibleRule": "enableTicketCreation == true && (ticketTypes == 'License' || ticketTypes == 'All')"
+    },
+    {
+      "name": "generateSummary",
+      "type": "boolean",
+      "label": "Generate Summary Report",
+      "defaultValue": true,
+      "required": false,
+      "helpMarkDown": "Generate detailed summary report with vulnerability information",
+      "groupName": "summary"
+    },
+    {
+      "name": "summaryDisplayMode",
+      "type": "pickList",
+      "label": "Summary Display Mode",
+      "defaultValue": "Both",
+      "required": false,
+      "helpMarkDown": "Where to display the summary report",
+      "options": {
+        "Logs Only": "Pipeline Logs Only",
+        "Tab Only": "Pipeline Tab Only",
+        "Both": "Both Logs and Tab"
+      },
+      "groupName": "summary",
+      "visibleRule": "generateSummary == true"
+    },
+    {
+      "name": "createFixPR",
+      "type": "boolean",
+      "label": "Create Fix PR",
+      "defaultValue": false,
+      "required": false,
+      "helpMarkDown": "Create pull requests with auto-fixes for findings",
+      "groupName": "summary"
+    },
+    {
+      "name": "fixPRBranchPrefix",
+      "type": "string",
+      "label": "Fix PR Branch Prefix",
+      "defaultValue": "semgrep-fixes/",
+      "required": false,
+      "helpMarkDown": "Prefix for branches created for fix PRs",
+      "groupName": "summary",
+      "visibleRule": "createFixPR == true"
+    },
+    {
+      "name": "groupFixPRsByType",
+      "type": "boolean",
+      "label": "Group Fix PRs by Type",
+      "defaultValue": true,
+      "required": false,
+      "helpMarkDown": "Group multiple fixes into one PR per rule type (SAST, SCA, etc.)",
+      "groupName": "summary",
+      "visibleRule": "createFixPR == true"
+    },
+    {
+      "name": "deploymentId",
+      "type": "string",
+      "label": "Deployment ID",
+      "defaultValue": "15145",
+      "required": true,
+      "helpMarkDown": "Semgrep deployment ID (static for Fareportal: 15145)",
+      "groupName": "advanced"
+    },
+    {
+      "name": "iterationListCsvUrl",
+      "type": "string",
+      "label": "Iteration List CSV URL",
+      "defaultValue": "https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=iterationlist.csv&api-version=6.0&download=true",
+      "required": false,
+      "helpMarkDown": "URL to download iteration list CSV for sprint mapping",
+      "groupName": "advanced"
+    },
+    {
+      "name": "azureDevPathCsvUrl",
+      "type": "string",
+      "label": "Azure DevOps Path CSV URL",
+      "defaultValue": "https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=azuredevpath.csv&api-version=6.0&download=true",
+      "required": false,
+      "helpMarkDown": "URL to download Azure DevOps area path mapping CSV",
+      "groupName": "advanced"
+    },
+    {
+      "name": "defaultIterationPath",
+      "type": "string",
+      "label": "Default Iteration Path",
+      "defaultValue": "Engineering\\2025-Sprints",
+      "required": false,
+      "helpMarkDown": "Fallback iteration path if CSV is unavailable",
+      "groupName": "advanced"
+    },
+    {
+      "name": "logLevel",
+      "type": "pickList",
+      "label": "Log Level",
+      "defaultValue": "INFO",
+      "required": false,
+      "helpMarkDown": "Logging level for the extension",
+      "options": {
+        "DEBUG": "DEBUG",
+        "INFO": "INFO",
+        "WARNING": "WARNING",
+        "ERROR": "ERROR"
+      },
+      "groupName": "advanced"
+    },
+    {
+      "name": "customRuleFilters",
+      "type": "multiLine",
+      "label": "Custom Rule Filters",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Comma or newline-separated list of rule names to include/exclude. Use '-' prefix to exclude (e.g., '-rule.name'). Leave empty to include all rules.",
+      "groupName": "advanced"
+    },
+    {
+      "name": "enableMetrics",
+      "type": "boolean",
+      "label": "Enable Metrics Collection",
+      "defaultValue": true,
+      "required": false,
+      "helpMarkDown": "Collect and report metrics about scan execution, ticket creation, and PR creation",
+      "groupName": "advanced"
+    }
+  ],
+  "execution": {
+    "Node": {
+      "target": "task.js"
+    }
+  },
+  "messages": {
+    "ScanStarted": "Starting Semgrep security scan...",
+    "ScanCompleted": "Semgrep scan completed successfully",
+    "ScanFailed": "Semgrep scan failed",
+    "TicketsCreated": "Created %d work items",
+    "SummaryGenerated": "Summary report generated",
+    "PRCreated": "Created fix PR: %s"
+  }
+}
