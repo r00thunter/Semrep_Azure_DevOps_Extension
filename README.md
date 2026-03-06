@@ -141,7 +141,7 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
 ### Advanced Configuration
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `deploymentId` | string | ✅ Yes | "15145" | Semgrep deployment ID (static for Fareportal) |
+| `deploymentId` | string | ✅ Yes | "123456" | Semgrep deployment ID (static for Fareportal) |
 | `iterationListCsvUrl` | string | No | - | URL to iteration list CSV |
 | `azureDevPathCsvUrl` | string | No | - | URL to area path mapping CSV |
 | `defaultIterationPath` | string | No | "Engineering\\2025-Sprints" | Fallback iteration path |
