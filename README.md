@@ -31,8 +31,8 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
 
 ### Upload Extension
 
-1. Download the extension package: `fareportal.semgrep-security-scan-1.0.0.vsix`
-2. Go to your Azure DevOps organization: `https://dev.azure.com/fareportal`
+1. Download the extension package: `semgrep-security-scan-1.0.0.vsix`
+2. Go to your Azure DevOps organization: `https://dev.azure.com/`
 3. Navigate to: **Organization Settings** → **Extensions** → **Manage Extensions**
 4. Click **Upload new extension**
 5. Select the `.vsix` file
@@ -48,7 +48,7 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
   inputs:
     semgrepAppToken: '$(SEMGREP_APP_TOKEN)'  # Store as secure variable
     scanType: 'PR Scan'                       # or 'Full Scan'
-    deploymentId: '15145'                     # Static for Fareportal
+    deploymentId: '12345'                     # Static
 ```
 
 ### Full Configuration Example
@@ -85,14 +85,6 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
     fixPRBranchPrefix: 'semgrep-fixes/'
     groupFixPRsByType: true
     
-    # Advanced
-    deploymentId: '15145'
-    iterationListCsvUrl: 'https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=iterationlist.csv&api-version=6.0&download=true'
-    azureDevPathCsvUrl: 'https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=azuredevpath.csv&api-version=6.0&download=true'
-    defaultIterationPath: 'Engineering\\2025-Sprints'
-    logLevel: 'INFO'
-    enableMetrics: true
-    customRuleFilters: ''  # Optional: 'rule.name1,-rule.name2'
 ```
 
 ## 📋 Input Parameters
@@ -141,7 +133,7 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
 ### Advanced Configuration
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `deploymentId` | string | ✅ Yes | "123456" | Semgrep deployment ID (static for Fareportal) |
+| `deploymentId` | string | ✅ Yes | "12345" | Semgrep deployment ID (static) |
 | `iterationListCsvUrl` | string | No | - | URL to iteration list CSV |
 | `azureDevPathCsvUrl` | string | No | - | URL to area path mapping CSV |
 | `defaultIterationPath` | string | No | "Engineering\\2025-Sprints" | Fallback iteration path |
