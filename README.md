@@ -22,17 +22,28 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
 - 📈 **Metrics & Reporting**: Comprehensive metrics collection and reporting
 - 🛡️ **Partial Failure Handling**: Continues processing even if some operations fail
 
+### 🎨 Beautiful UI (Version 1.1.0+)
+- **Modern Form Interface**: Beautiful, fully functional form-based UI for configuration
+- **Accessibility**: WCAG 2.1 AA compliant with full keyboard navigation and screen reader support
+- **Real-time Validation**: Instant feedback with comprehensive field validation
+- **Export/Import**: Save and load configurations as JSON files
+- **Preview Modal**: Preview configuration before saving
+- **Auto-save**: Automatic state preservation with restore capability
+- **Keyboard Shortcuts**: Power user features (Ctrl+S, Ctrl+P, Ctrl+E)
+- **Responsive Design**: Works seamlessly on desktop, tablet, and mobile devices
+- **Smart Tooltips**: Context-aware help with keyboard accessibility
+
 ## 📦 Installation
 
 ### Prerequisites
-- Azure DevOps organization (Fareportal)
+- Azure DevOps organization (example)
 - Semgrep account with API token
 - Python 3.8+ (available on pipeline agents)
 
 ### Upload Extension
 
-1. Download the extension package: `fareportal.semgrep-security-scan-1.0.0.vsix`
-2. Go to your Azure DevOps organization: `https://dev.azure.com/fareportal`
+1. Download the extension package: `semgrep-security-scan-1.1.0.vsix` (available in `artifacts/` directory)
+2. Go to your Azure DevOps organization: `https://dev.azure.com/`
 3. Navigate to: **Organization Settings** → **Extensions** → **Manage Extensions**
 4. Click **Upload new extension**
 5. Select the `.vsix` file
@@ -48,7 +59,7 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
   inputs:
     semgrepAppToken: '$(SEMGREP_APP_TOKEN)'  # Store as secure variable
     scanType: 'PR Scan'                       # or 'Full Scan'
-    deploymentId: '15145'                     # Static for Fareportal
+    deploymentId: '12345'                     # Static change according to your organization
 ```
 
 ### Full Configuration Example
@@ -84,15 +95,6 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
     createFixPR: false
     fixPRBranchPrefix: 'semgrep-fixes/'
     groupFixPRsByType: true
-    
-    # Advanced
-    deploymentId: '15145'
-    iterationListCsvUrl: 'https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=iterationlist.csv&api-version=6.0&download=true'
-    azureDevPathCsvUrl: 'https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=azuredevpath.csv&api-version=6.0&download=true'
-    defaultIterationPath: 'Engineering\\2025-Sprints'
-    logLevel: 'INFO'
-    enableMetrics: true
-    customRuleFilters: ''  # Optional: 'rule.name1,-rule.name2'
 ```
 
 ## 📋 Input Parameters
@@ -141,7 +143,7 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
 ### Advanced Configuration
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `deploymentId` | string | ✅ Yes | "15145" | Semgrep deployment ID (static for Fareportal) |
+| `deploymentId` | string | ✅ Yes | "12345" | Semgrep deployment ID (static change according to your organization) |
 | `iterationListCsvUrl` | string | No | - | URL to iteration list CSV |
 | `azureDevPathCsvUrl` | string | No | - | URL to area path mapping CSV |
 | `defaultIterationPath` | string | No | "Engineering\\2025-Sprints" | Fallback iteration path |
@@ -359,7 +361,7 @@ Additional documentation available in the `docs/` directory:
 
 ## ✅ Status
 
-**Production Ready** - All core features and enhancements implemented and tested.
+**Production Ready** - All core features, enhancements, and UI implemented and tested.
 
 - ✅ Scan execution (Full & PR)
 - ✅ Ticket creation (SAST, SCA, License)
@@ -368,6 +370,9 @@ Additional documentation available in the `docs/` directory:
 - ✅ Advanced error recovery
 - ✅ Performance optimizations
 - ✅ Metrics and reporting
+- ✅ Beautiful UI interface (v1.1.0+)
+- ✅ Full accessibility support (v1.1.0+)
+- ✅ Advanced validation (v1.1.0+)
 
 ## 📄 License
 
@@ -382,7 +387,16 @@ For issues, questions, or contributions:
 
 ## 🔄 Version History
 
-- **1.0.0** (Current)
+- **1.1.0** (Current)
+  - Beautiful form-based UI interface
+  - Full accessibility support (WCAG 2.1 AA)
+  - Advanced validation and user experience features
+  - Export/import configuration
+  - Auto-save/restore functionality
+  - Keyboard shortcuts and smart tooltips
+  - Responsive design and performance optimizations
+
+- **1.0.0**
   - Initial release
   - All core features implemented
   - Advanced error recovery and performance optimizations
@@ -396,4 +410,4 @@ For issues, questions, or contributions:
 
 ---
 
-**Built for Fareportal** | **Powered by Semgrep**
+**Powered by Semgrep**
