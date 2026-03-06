@@ -388,4 +388,4 @@ For issues, questions, or contributions:
 
 ---
 
-**Built for Fareportal** | **Powered by Semgrep**
+**Built for AzureDevOps** | **Powered by Semgrep**
