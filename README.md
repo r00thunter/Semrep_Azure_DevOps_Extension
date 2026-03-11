@@ -2,6 +2,9 @@
 
 A comprehensive Azure DevOps pipeline extension for Semgrep security scanning with advanced ticket creation, summary reporting, auto-fix PR capabilities, and enterprise-grade error handling.
 
+## Get it For Free on Azure MarketPlace
+- https://marketplace.visualstudio.com/items?itemName=YashMishrar00thunter.semgrep-security-scan
+
 ## 🎯 Features
 
 ### Core Functionality
