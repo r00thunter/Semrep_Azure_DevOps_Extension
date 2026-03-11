@@ -5,10 +5,17 @@ import * as fs from 'fs';
 async function run() {
     try {
         // Get input parameters
-        const semgrepAppToken: string = tl.getInput('semgrepAppToken', true)!;
+        // Auto-fetch from variable library 'Semgrep_Variables' if not provided
+        const semgrepAppTokenInput = tl.getInput('semgrepAppToken', false);
+        const semgrepAppToken: string = semgrepAppTokenInput || process.env.SEMGREP_APP_TOKEN || '';
+        if (!semgrepAppToken) {
+            throw new Error('Semgrep App Token is required. Please provide it as input or in variable library "Semgrep_Variables" as SEMGREP_APP_TOKEN.');
+        }
         const scanType: string = tl.getInput('scanType', true)!;
-        const baselineRef: string = tl.getInput('baselineRef', false) || 'origin/master';
-        const semgrepOrg: string = tl.getInput('semgrepOrg', false) || '';
+        // Use SEMGREP_BRANCH from variable library if baselineRef not provided
+        const baselineRefInput = tl.getInput('baselineRef', false);
+        const baselineRef: string = baselineRefInput || process.env.SEMGREP_BRANCH || process.env.BUILD_SOURCEBRANCHNAME || 'origin/master';
+        const semgrepOrg: string = tl.getInput('semgrepOrg', false) || process.env.SEMGREP_ORG || '';
         
         // Ticket creation parameters
         const enableTicketCreation: boolean = tl.getBoolInput('enableTicketCreation', false) || false;
@@ -47,16 +54,20 @@ async function run() {
         process.env.SEMGREP_APP_TOKEN = semgrepAppToken;
         
         // Get Azure DevOps environment variables
-        const buildRepoName = process.env.BUILD_REPOSITORY_NAME || '';
+        // Prefer variables from 'Semgrep_Variables' library if available
+        const buildRepoName = process.env.SEMGREP_REPO_NAME || process.env.BUILD_REPOSITORY_NAME || '';
         const systemCollectionUri = process.env.SYSTEM_COLLECTIONURI || '';
         const systemTeamProjectId = process.env.SYSTEM_TEAMPROJECTID || '';
         const buildRepositoryId = process.env.BUILD_REPOSITORY_ID || '';
-        const buildRepositoryUri = process.env.BUILD_REPOSITORY_URI || '';
+        const buildRepositoryUri = process.env.SEMGREP_REPO_URL || process.env.BUILD_REPOSITORY_URI || '';
         const buildRequestedForEmail = process.env.BUILD_REQUESTEDFOREMAIL || '';
         const pipelineStartTime = process.env.SYSTEM_PIPELINESTARTTIME || '';
         const pullRequestId = process.env.SYSTEM_PULLREQUEST_PULLREQUESTID || '0';
-        const sourceBranchName = process.env.BUILD_SOURCEBRANCHNAME || '';
+        const sourceBranchName = process.env.SEMGREP_BRANCH || process.env.BUILD_SOURCEBRANCHNAME || '';
+        // SYSTEM_ACCESSTOKEN from variable library takes precedence
         const systemAccessToken = process.env.SYSTEM_ACCESSTOKEN || '';
+        // SEMGREP_WEBAPP_TOKEN from variable library (if needed)
+        const semgrepWebappToken = process.env.SEMGREP_WEBAPP_TOKEN || '';
         
         // Set environment variables for Python scripts
         process.env.BUILD_REPOSITORY_NAME = buildRepoName;
@@ -69,9 +80,15 @@ async function run() {
         process.env.SYSTEM_PULLREQUEST_PULLREQUESTID = pullRequestId;
         process.env.BUILD_SOURCEBRANCHNAME = sourceBranchName;
         process.env.SYSTEM_ACCESSTOKEN = systemAccessToken;
+        if (semgrepWebappToken) {
+            process.env.SEMGREP_WEBAPP_TOKEN = semgrepWebappToken;
+        }
         process.env.DEPLOYMENT_ID = deploymentId;
         process.env.SCAN_TYPE = scanType;
         process.env.BASELINE_REF = baselineRef;
+        if (semgrepOrg) {
+            process.env.SEMGREP_ORG = semgrepOrg;
+        }
         
         // Set ticket creation parameters
         process.env.ENABLE_TICKET_CREATION = enableTicketCreation.toString();

@@ -11,6 +11,7 @@ yarn-error.log
 *.vsix
 dist/
 extension/tasks/**/*.js
+semgrepScan/
 
 # Python
 __pycache__/

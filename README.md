@@ -5,6 +5,31 @@ A comprehensive Azure DevOps pipeline extension for Semgrep security scanning wi
 ## Get it For Free on Azure MarketPlace
 - https://marketplace.visualstudio.com/items?itemName=YashMishrar00thunter.semgrep-security-scan
 
+## 📸 Screenshots
+
+### Scan Configuration
+![Scan Configuration](images/0.png)
+
+### Ticket Type Selection
+Select ticketing options: SAST, SCA, License, or All
+![Ticket Type Selection](images/1.png)
+
+### SAST Ticket Creation
+SAST Ticket creation based on Severity and Confidence
+![SAST Ticket Creation](images/2.png)
+
+### SCA Ticket Creation
+SCA Ticket creation based on Severity and Reachability
+![SCA Ticket Creation](images/3.png)
+
+### License Ticket Creation
+License Ticket creation for licenses apart from whitelisted licenses
+![License Ticket Creation](images/4.png)
+
+### Auto-Fix PR and Summary Configuration
+Auto-Fix PR generation and summary configuration
+![Auto-Fix PR and Summary Configuration](images/5.png)
+
 ## 🎯 Features
 
 ### Core Functionality

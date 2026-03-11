@@ -5,7 +5,9 @@
   "scripts": {
     "build": "tsc && npm run copy-scripts",
     "copy-scripts": "node scripts/copy-scripts.js",
-    "package": "npm run build && tfx extension create --manifest-globs vss-extension.json",
+    "prepare-task": "node scripts/prepare-task.js",
+    "zip-task": "node scripts/zip-task.js",
+    "package": "npm run build && npm run prepare-task && tfx extension create --manifest-globs vss-extension.json",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

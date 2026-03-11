@@ -26,8 +26,8 @@
                 <div class="section-content expanded">
                     <div class="form-group">
                         <label for="semgrepAppToken" class="form-label">
-                            Semgrep App Token <span class="required">*</span>
-                            <span class="help-icon" data-help="Your Semgrep API token. Store as a secure variable in Azure DevOps.">ℹ️</span>
+                            Semgrep App Token
+                            <span class="help-icon" data-help="Your Semgrep API token. If not provided, will be auto-fetched from variable library 'Semgrep_Variables' (SEMGREP_APP_TOKEN).">ℹ️</span>
                         </label>
                         <div class="input-wrapper">
                             <input 
@@ -35,12 +35,11 @@
                                 id="semgrepAppToken" 
                                 name="semgrepAppToken" 
                                 class="form-input" 
-                                required
-                                placeholder="Enter your Semgrep App Token"
+                                placeholder="Enter your Semgrep App Token (or use SEMGREP_APP_TOKEN from variable library)"
                             >
                             <button type="button" class="toggle-password" aria-label="Show password">👁️</button>
                         </div>
-                        <span class="help-text">Store as a secure variable in Azure DevOps</span>
+                        <span class="help-text">Optional - will be auto-fetched from variable library 'Semgrep_Variables' (SEMGREP_APP_TOKEN) if not provided</span>
                         <span class="error-message" id="semgrepAppToken-error" role="alert" aria-live="polite"></span>
                     </div>
 
@@ -59,23 +58,22 @@
                     <div class="form-group conditional" data-show="scanType == 'PR Scan'">
                         <label for="baselineRef" class="form-label">
                             Baseline Reference
-                            <span class="help-icon" data-help="Git reference to use as baseline for PR scans">ℹ️</span>
+                            <span class="help-icon" data-help="Git reference to use as baseline for PR scans. If not provided, will use SEMGREP_BRANCH from variable library (defaults to $(Build.SourceBranchName)).">ℹ️</span>
                         </label>
                         <input 
                             type="text" 
                             id="baselineRef" 
                             name="baselineRef" 
                             class="form-input" 
-                            value="origin/master"
-                            placeholder="origin/master"
+                            placeholder="Will use SEMGREP_BRANCH from variable library if not provided"
                         >
-                        <span class="help-text">Default: origin/master</span>
+                        <span class="help-text">Optional - will use SEMGREP_BRANCH from variable library 'Semgrep_Variables' (defaults to $(Build.SourceBranchName)) if not provided</span>
                     </div>
 
                     <div class="form-group">
                         <label for="semgrepOrg" class="form-label">
                             Semgrep Organization
-                            <span class="help-icon" data-help="Semgrep organization name (optional, will be fetched from token if not provided)">ℹ️</span>
+                            <span class="help-icon" data-help="Semgrep organization name (optional, will be auto-fetched from token or variable library if not provided)">ℹ️</span>
                         </label>
                         <input 
                             type="text" 
@@ -84,7 +82,7 @@
                             class="form-input" 
                             placeholder="Your organization name"
                         >
-                        <span class="help-text">Optional - will be fetched from token if not provided</span>
+                        <span class="help-text">Optional - will be auto-fetched from token or variable library if not provided</span>
                     </div>
                 </div>
             </section>

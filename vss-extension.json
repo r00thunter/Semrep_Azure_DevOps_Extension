@@ -1,10 +1,13 @@
 {
   "manifestVersion": 1,
   "id": "semgrep-security-scan",
-  "version": "1.1.0",
+  "version": "1.1.7",
   "name": "Semgrep Security Scan",
   "description": "Comprehensive security scanning with Semgrep including SAST, SCA, and License compliance with configurable ticket creation and auto-fix PR capabilities",
-  "publisher": "fareportal",
+  "publisher": "YashMishrar00thunter",
+  "galleryFlags": [
+    "Public"
+  ],
   "targets": [
     {
       "id": "Microsoft.VisualStudio.Services"
@@ -27,9 +30,8 @@
   ],
   "files": [
     {
-      "path": "extension/tasks/semgrepScan",
-      "addressable": true,
-      "contentType": "application/zip"
+      "path": "semgrepScan",
+      "addressable": true
     },
     {
       "path": "extension/icons",
@@ -45,8 +47,7 @@
     }
   },
   "categories": [
-    "Azure Pipelines",
-    "Security"
+    "Azure Pipelines"
   ],
   "tags": [
     "semgrep",
