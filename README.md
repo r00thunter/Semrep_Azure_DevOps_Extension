@@ -155,7 +155,7 @@ $(adoPat)
 ### ❌ Do not do this
 
 ```yaml
-semgrepAppToken: '2709ac75898d5f771e4c33bb4fc05a1253cab50dc3fef21cf07a024c843828f3'  # NEVER
+semgrepAppToken: 'plain_text_token'  # NEVER
 ```
 
 Use **Copy Pipeline YAML** in the Semgrep config hub — it always emits `'$(semgrep_token)'` and `'$(adoPat)'`, never raw secrets.
