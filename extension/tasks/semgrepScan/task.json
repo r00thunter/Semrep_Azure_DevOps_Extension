@@ -10,7 +10,7 @@
   "version": {
     "Major": 1,
     "Minor": 2,
-    "Patch": 17
+    "Patch": 18
   },
   "instanceNameFormat": "Semgrep Security Scan",
   "icon": "icon.png",

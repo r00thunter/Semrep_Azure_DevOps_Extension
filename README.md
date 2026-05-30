@@ -65,10 +65,11 @@ Auto-Fix PR generation and summary configuration
 - Azure DevOps organization (example)
 - Semgrep account with API token
 - Python 3.8+ (available on pipeline agents)
+- Four custom fields on **Task** for ticket creation (see setup Step 2 below)
 
 ### Upload Extension
 
-1. Download the extension package: `semgrep-security-scan-1.1.0.vsix` (available in `artifacts/` directory)
+1. Download the latest extension package from the repo root (e.g. `YashMishrar00thunter.semgrep-security-scan-1.2.18.vsix`) or build with `npm run package`
 2. Go to your Azure DevOps organization: `https://dev.azure.com/`
 3. Navigate to: **Organization Settings** → **Extensions** → **Manage Extensions**
 4. Click **Upload new extension**
@@ -94,9 +95,33 @@ Auto-Fix PR generation and summary configuration
 5. Save the variable group
 6. Under **Pipeline permissions**, allow your pipeline to use this group
 
-### Step 2 — Reference the group in YAML
+### Step 2 — Create custom fields on Task (required for ticket creation)
 
-Use **Copy Pipeline YAML** in **Project → Semgrep → Scan Configuration**, or start from this template:
+If **Enable Ticket Creation** is on, Azure DevOps must have four custom fields on the **Task** work item type. Without them, work item create and duplicate detection fail with errors like `TF51535: Cannot find field Custom.TaskSeverity`.
+
+**To create them:**
+
+1. Go to **Organization Settings → Boards → Process**
+2. Find the process your project uses
+3. If it's a system process (Agile, Scrum, CMMI, Basic), click **Create inherited process**
+4. Open the inherited process
+5. Select the **Task** work item type
+6. Click **New field** and create:
+
+| Name | Type | Reference Name |
+|------|------|----------------|
+| Task Severity | String | `Custom.TaskSeverity` |
+| Repository | String | `Custom.Repository` |
+| Task Source | String | `Custom.TaskSource` |
+| Ticket Type | String | `Custom.TicketType` |
+
+Azure DevOps automatically generates the `Custom.*` reference names when you create custom fields in an inherited process.
+
+7. Assign the inherited process to your project: **Project Settings → Overview → Process** (if you created a new inherited process)
+
+### Step 3 — Pipeline YAML
+
+Use **Copy Pipeline YAML** in **Project → Semgrep → Scan Configuration**. It outputs the same structure as [`azure-pipelines.yml`](azure-pipelines.yml) in this repo, with your hub values filled in. Secrets always use Library macros — never paste real tokens into YAML.
 
 ```yaml
 trigger:
@@ -125,27 +150,29 @@ steps:
     semgrepAppToken: '$(semgrep_token)'
     scanType: 'Full Scan'
 
-    # PAT from Library variable group Semgrep
+    # Option 1 - Use PAT from Variable Group
     adoPat: '$(adoPat)'
 
     adoOrganization: 'your-org'
     adoProject: 'YourProject'
-    adoTeam: 'YourTeam'
+    adoTeam: 'Your Team'
 
     sastSeverities: 'Critical,High,Medium,Low'
     sastConfidences: 'High,Medium,Low'
     scaSeverities: 'Critical,High,Medium,Low'
     scaReachabilities: 'Always Reachable,Reachable,Conditionally Reachable,Direct,Transitive'
 
-    deploymentId: '36268'
+    deploymentId: 'YOUR_DEPLOYMENT_ID'
     logLevel: 'DEBUG'
 ```
 
-Azure DevOps replaces `$(semgrep_token)` and `$(adoPat)` with the secret values when the pipeline runs. Values are **masked in logs** and **not committed** to the repo.
+Replace `your-org`, `YourProject`, `Your Team`, and `YOUR_DEPLOYMENT_ID` with your values (from the Semgrep hub or Semgrep AppSec Platform → Settings → General).
 
-### Step 3 — Pipeline editor (optional)
+Azure DevOps expands `$(semgrep_token)` and `$(adoPat)` at runtime from the Library group. Values are **masked in logs** and must **not** be committed to git.
 
-If you configure the task in the native pipeline UI instead of YAML, type the **macros** in the token fields:
+### Step 4 — Pipeline editor (optional)
+
+If you configure the task in the native pipeline UI instead of YAML, type the **Library macros** in the secret fields — not raw tokens:
 
 ```text
 $(semgrep_token)
@@ -154,72 +181,22 @@ $(adoPat)
 
 ### ❌ Do not do this
 
+Never commit real Semgrep tokens or Azure DevOps PATs in YAML, JSON, or README:
+
 ```yaml
-semgrepAppToken: 'plain_text_token'  # NEVER
+semgrepAppToken: '<paste-your-real-token-here>'  # NEVER
+adoPat: '<paste-your-real-pat-here>'             # NEVER
 ```
 
-Use **Copy Pipeline YAML** in the Semgrep config hub — it always emits `'$(semgrep_token)'` and `'$(adoPat)'`, never raw secrets.
+Use **Copy Pipeline YAML** in the Semgrep config hub — it always emits `'$(semgrep_token)'` and `'$(adoPat)'`.
 
 ---
 
 ## 🚀 Usage
 
-### Basic Configuration
+Configure options in **Project → Semgrep → Scan Configuration**, then export **`azure-pipelines.yml`** via **Copy Pipeline YAML**. The exported file includes only the task inputs shown in the template above; additional settings (ticket routing, summary, PR) use task defaults or can be added manually to YAML if needed.
 
-```yaml
-variables:
-- group: Semgrep
-
-steps:
-- task: SemgrepSecurityScan@1
-  displayName: 'Semgrep Security Scan'
-  inputs:
-    semgrepAppToken: '$(semgrep_token)'
-    adoPat: '$(adoPat)'
-    scanType: 'PR Scan'
-    deploymentId: '36268'
-```
-
-### Full Configuration Example
-
-```yaml
-variables:
-- group: Semgrep
-
-steps:
-- task: SemgrepSecurityScan@1
-  displayName: 'Semgrep Security Scan'
-  inputs:
-    semgrepAppToken: '$(semgrep_token)'
-    adoPat: '$(adoPat)'
-    scanType: 'PR Scan'
-    baselineRef: 'origin/master'
-    deploymentId: '36268'
-    logLevel: 'INFO'
-    
-    # Ticket Creation
-    enableTicketCreation: true
-    ticketTypes: 'All'  # or 'SAST,SCA,License'
-    
-    # SAST Filters
-    sastSeverities: 'Critical,High'
-    sastConfidences: 'High,Medium'
-    
-    # SCA Filters
-    scaSeverities: 'Critical,High'
-    scaReachabilities: 'Always Reachable,Reachable,Direct'
-    
-    # License Configuration
-    useDefaultLicenseWhitelist: true
-    licenseWhitelistOverride: ''  # Additional licenses if needed
-    
-    # Summary & PR
-    generateSummary: true
-    summaryDisplayMode: 'Both'  # 'Logs Only', 'Tab Only', or 'Both'
-    createFixPR: false
-    fixPRBranchPrefix: 'semgrep-fixes/'
-    groupFixPRsByType: true
-```
+For a working example, see [`azure-pipelines.yml`](azure-pipelines.yml) in this repository (replace org/project/deployment values with your own).
 
 ## 📋 Input Parameters
 
@@ -440,6 +417,8 @@ Metrics are saved to `semgrep_metrics.json` and can be published as artifacts.
    - Check token has necessary permissions
 
 3. **Ticket Creation Fails**
+   - Verify the four custom Task fields exist (see **Step 2 — Create custom fields on Task**)
+   - Verify `adoPat` in the Library group has **Work Items (Read & Write)** scope
    - Verify `SYSTEM_ACCESSTOKEN` is available
    - Enable "Allow scripts to access OAuth token" in pipeline options
 
