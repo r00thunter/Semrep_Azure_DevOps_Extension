@@ -5,84 +5,102 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Semgrep Security Scan Configuration</title>
     <link rel="stylesheet" href="task-inputs.css">
+    <script src="https://cdn.jsdelivr.net/npm/vss-web-extension-sdk@5.140.0/lib/VSS.SDK.min.js"></script>
 </head>
-<body>
+<body class="sidebar-mode">
     <div class="semgrep-config-container">
+        <div class="ado-callout" id="ado-callout">
+            <strong>Before you configure the pipeline</strong> — create a Library variable group named <code>Semgrep</code>
+            with secrets <code>semgrep_token</code> and <code>adoPat</code> under <strong>Pipelines → Library</strong>.
+            Use this hub for dropdowns and YAML export. **Copy Pipeline YAML** outputs the exact `azure-pipelines.yml` template with your values filled in.
+        </div>
         <header class="config-header">
-            <h1>🔒 Semgrep Security Scan Configuration</h1>
-            <p class="subtitle">Configure your security scanning, ticket creation, and auto-fix options</p>
+            <div class="config-header-inner">
+                <div class="config-header-text">
+                    <h1>Semgrep Security Scan</h1>
+                    <p class="subtitle">Configure scanning, ticket creation, routing, and auto-fix</p>
+                </div>
+            </div>
         </header>
 
         <form id="semgrep-config-form" class="config-form">
             <!-- Scan Configuration Section -->
             <section class="config-section" data-section="scan" data-expanded="true">
                 <header class="section-header">
-                    <span class="section-icon">🔍</span>
+                    <span class="section-icon" aria-hidden="true">🔍</span>
                     <h3 class="section-title">Scan Configuration</h3>
                     <button type="button" class="toggle-section" aria-label="Toggle section">
                         <span class="toggle-icon">▼</span>
                     </button>
                 </header>
                 <div class="section-content expanded">
-                    <div class="form-group">
-                        <label for="semgrepAppToken" class="form-label">
-                            Semgrep App Token
-                            <span class="help-icon" data-help="Your Semgrep API token. If not provided, will be auto-fetched from variable library 'Semgrep_Variables' (SEMGREP_APP_TOKEN).">ℹ️</span>
-                        </label>
-                        <div class="input-wrapper">
-                            <input 
-                                type="password" 
-                                id="semgrepAppToken" 
-                                name="semgrepAppToken" 
-                                class="form-input" 
-                                placeholder="Enter your Semgrep App Token (or use SEMGREP_APP_TOKEN from variable library)"
+                    <div class="section-grid">
+                        <div class="form-group">
+                            <label for="deploymentId" class="form-label">
+                                Deployment ID <span class="required">*</span>
+                                <span class="help-icon" data-help="Your Semgrep Cloud deployment ID. Find it in Semgrep AppSec Platform → Settings → General.">ℹ️</span>
+                            </label>
+                            <input
+                                type="text"
+                                id="deploymentId"
+                                name="deploymentId"
+                                class="form-input"
+                                placeholder="e.g. 36268"
+                                required
                             >
-                            <button type="button" class="toggle-password" aria-label="Show password">👁️</button>
+                            <span class="error-message" id="deploymentId-error" role="alert" aria-live="polite"></span>
                         </div>
-                        <span class="help-text">Optional - will be auto-fetched from variable library 'Semgrep_Variables' (SEMGREP_APP_TOKEN) if not provided</span>
-                        <span class="error-message" id="semgrepAppToken-error" role="alert" aria-live="polite"></span>
-                    </div>
 
-                    <div class="form-group">
-                        <label for="scanType" class="form-label">
-                            Scan Type <span class="required">*</span>
-                            <span class="help-icon" data-help="Choose between PR Scan (differential) or Full Scan">ℹ️</span>
-                        </label>
-                        <select id="scanType" name="scanType" class="form-select" required>
-                            <option value="PR Scan">PR Scan</option>
-                            <option value="Full Scan">Full Scan</option>
-                        </select>
-                        <span class="error-message" id="scanType-error" role="alert" aria-live="polite"></span>
-                    </div>
+                        <div class="form-group">
+                            <label for="scanType" class="form-label">
+                                Scan Type <span class="required">*</span>
+                                <span class="help-icon" data-help="Choose between PR Scan (differential) or Full Scan">ℹ️</span>
+                            </label>
+                            <select id="scanType" name="scanType" class="form-select" required>
+                                <option value="PR Scan">PR Scan</option>
+                                <option value="Full Scan" selected>Full Scan</option>
+                            </select>
+                            <span class="error-message" id="scanType-error" role="alert" aria-live="polite"></span>
+                        </div>
 
-                    <div class="form-group conditional" data-show="scanType == 'PR Scan'">
-                        <label for="baselineRef" class="form-label">
-                            Baseline Reference
-                            <span class="help-icon" data-help="Git reference to use as baseline for PR scans. If not provided, will use SEMGREP_BRANCH from variable library (defaults to $(Build.SourceBranchName)).">ℹ️</span>
-                        </label>
-                        <input 
-                            type="text" 
-                            id="baselineRef" 
-                            name="baselineRef" 
-                            class="form-input" 
-                            placeholder="Will use SEMGREP_BRANCH from variable library if not provided"
-                        >
-                        <span class="help-text">Optional - will use SEMGREP_BRANCH from variable library 'Semgrep_Variables' (defaults to $(Build.SourceBranchName)) if not provided</span>
-                    </div>
+                        <div class="form-group">
+                            <label for="adoOrganization" class="form-label">Azure DevOps Organization</label>
+                            <input type="text" id="adoOrganization" name="adoOrganization" class="form-input" placeholder="soshield-inc">
+                        </div>
 
-                    <div class="form-group">
-                        <label for="semgrepOrg" class="form-label">
-                            Semgrep Organization
-                            <span class="help-icon" data-help="Semgrep organization name (optional, will be auto-fetched from token or variable library if not provided)">ℹ️</span>
-                        </label>
-                        <input 
-                            type="text" 
-                            id="semgrepOrg" 
-                            name="semgrepOrg" 
-                            class="form-input" 
-                            placeholder="Your organization name"
-                        >
-                        <span class="help-text">Optional - will be auto-fetched from token or variable library if not provided</span>
+                        <div class="form-group">
+                            <label for="adoProject" class="form-label">Azure DevOps Project</label>
+                            <input type="text" id="adoProject" name="adoProject" class="form-input" placeholder="Engineering">
+                        </div>
+
+                        <div class="form-group conditional span-full" data-show="scanType == 'PR Scan'">
+                            <label for="baselineRef" class="form-label">
+                                Baseline Reference
+                                <span class="help-icon" data-help="Git reference to use as baseline for PR scans">ℹ️</span>
+                            </label>
+                            <input
+                                type="text"
+                                id="baselineRef"
+                                name="baselineRef"
+                                class="form-input"
+                                value="origin/master"
+                                placeholder="origin/master"
+                            >
+                            <span class="help-text">Default: origin/master</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="logLevel" class="form-label">
+                                Log Level
+                                <span class="help-icon" data-help="Logging level for the extension">ℹ️</span>
+                            </label>
+                            <select id="logLevel" name="logLevel" class="form-select">
+                                <option value="DEBUG">DEBUG</option>
+                                <option value="INFO">INFO</option>
+                                <option value="WARNING">WARNING</option>
+                                <option value="ERROR">ERROR</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -90,54 +108,131 @@
             <!-- Ticket Creation Section -->
             <section class="config-section" data-section="tickets" data-expanded="true">
                 <header class="section-header">
-                    <span class="section-icon">🎫</span>
+                    <span class="section-icon" aria-hidden="true">🎫</span>
                     <h3 class="section-title">Ticket Creation</h3>
                     <button type="button" class="toggle-section" aria-label="Toggle section">
                         <span class="toggle-icon">▼</span>
                     </button>
                 </header>
                 <div class="section-content expanded">
-                    <div class="form-group">
-                        <label class="toggle-label">
-                            <input 
-                                type="checkbox" 
-                                id="enableTicketCreation" 
-                                name="enableTicketCreation" 
-                                class="toggle-input"
-                                checked
-                            >
-                            <span class="toggle-switch"></span>
-                            <span class="toggle-text">Enable Ticket Creation</span>
-                        </label>
-                        <span class="help-text">Enable creation of Azure DevOps work items for findings</span>
+                    <div class="section-grid">
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input
+                                    type="checkbox"
+                                    id="enableTicketCreation"
+                                    name="enableTicketCreation"
+                                    class="toggle-input"
+                                    checked
+                                >
+                                <span class="toggle-switch"></span>
+                                <span class="toggle-text">Enable Ticket Creation</span>
+                            </label>
+                            <span class="help-text">Create Azure DevOps work items for findings</span>
+                        </div>
+
+                        <div class="form-group conditional" data-show="enableTicketCreation == true">
+                            <label class="form-label" for="ticketTypes-trigger">
+                                Ticket Types
+                                <span class="help-icon" data-help="Select which finding types should create work items (SAST, SCA, License)">ℹ️</span>
+                            </label>
+                            <div class="multi-select" data-name="ticketTypes">
+                                <button type="button" id="ticketTypes-trigger" class="multi-select-trigger" aria-expanded="false" aria-haspopup="listbox">
+                                    <span class="multi-select-summary"></span>
+                                    <span class="multi-select-chevron" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="multi-select-panel" role="listbox" aria-multiselectable="true" hidden>
+                                    <label class="multi-select-option ticket-type-sast"><input type="checkbox" name="ticketTypes" value="SAST" class="checkbox-input" checked><span>SAST — Source Code Analysis</span></label>
+                                    <label class="multi-select-option ticket-type-sca"><input type="checkbox" name="ticketTypes" value="SCA" class="checkbox-input" checked><span>SCA — Supply Chain Analysis</span></label>
+                                    <label class="multi-select-option ticket-type-license"><input type="checkbox" name="ticketTypes" value="License" class="checkbox-input" checked><span>License — Compliance</span></label>
+                                </div>
+                            </div>
+                            <span class="help-text">All three selected exports as <code>All</code> in pipeline YAML</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Work Item Routing Setup -->
+            <section class="config-section conditional" data-section="routing" data-expanded="false" data-show="enableTicketCreation == true">
+                <header class="section-header">
+                    <span class="section-icon" aria-hidden="true">🗺️</span>
+                    <h3 class="section-title">Work Item Routing Setup</h3>
+                    <button type="button" class="toggle-section" aria-label="Toggle section">
+                        <span class="toggle-icon">▼</span>
+                    </button>
+                </header>
+                <div class="section-content">
+                    <div class="setup-guide">
+                        <p><strong>Sprint &amp; area routing</strong> — when ticket creation is enabled:</p>
+                        <ol class="setup-steps">
+                            <li>Ensure Library group <code>Semgrep</code> includes secret <code>adoPat</code> (work item scope).</li>
+                            <li><strong>Recommended:</strong> enable <em>Fetch Current Sprint from Azure DevOps API</em>.</li>
+                            <li>Set fallback <em>Default Iteration Path</em> and <em>Default Area Path</em> (full paths like <code>Engineering\Iteration\Sprint 1</code>).</li>
+                            <li>Use <strong>Copy Pipeline YAML</strong> to export <code>azure-pipelines.yml</code> (secrets reference Library macros only).</li>
+                        </ol>
                     </div>
 
-                    <div class="form-group conditional" data-show="enableTicketCreation == true">
-                        <label class="form-label">
-                            Ticket Types
-                            <span class="help-icon" data-help="Select which types of tickets to create">ℹ️</span>
-                        </label>
-                        <div class="checkbox-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="ticketTypes" value="SAST" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">SAST (Source Code Analysis)</span>
+                    <div class="section-grid">
+                        <div class="form-group conditional span-full" data-show="enableTicketCreation == true">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="useAdoIterationApi" name="useAdoIterationApi" class="toggle-input" checked>
+                                <span class="toggle-switch"></span>
+                                <span class="toggle-text">Fetch Current Sprint from Azure DevOps API</span>
                             </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="ticketTypes" value="SCA" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">SCA (Supply Chain Analysis)</span>
+                            <span class="help-text">Uses Organization and Project from Scan Configuration. Calls team settings / classification APIs.</span>
+                        </div>
+
+                        <div class="form-group span-full">
+                            <label for="adoTeam" class="form-label">Azure DevOps Team</label>
+                            <input type="text" id="adoTeam" name="adoTeam" class="form-input" placeholder="Engineering Team" value="Engineering Team">
+                            <span class="help-text">Team used for <code>.../teamsettings/iterations?$timeframe=current</code> API</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="defaultIterationPath" class="form-label">
+                                Default Iteration Path (Sprint Fallback)
+                                <span class="help-icon" data-help="Used when the sprint CSV is missing or no row matches today's date">ℹ️</span>
                             </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="ticketTypes" value="License" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">License Compliance</span>
+                            <div class="ado-fetch-row">
+                                <button type="button" id="load-iteration-paths-btn" class="btn btn-secondary btn-sm">
+                                    Load sprint paths from ADO
+                                </button>
+                                <span id="load-iteration-paths-status" class="ado-fetch-status" aria-live="polite"></span>
+                            </div>
+                            <select id="defaultIterationPathSelect" class="form-select ado-path-select" aria-label="Select sprint iteration path">
+                                <option value="">— Select sprint path or type below —</option>
+                            </select>
+                            <input
+                                type="text"
+                                id="defaultIterationPath"
+                                name="defaultIterationPath"
+                                class="form-input"
+                                placeholder="Engineering\Iteration\Sprint 1"
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="defaultAreaPath" class="form-label">
+                                Default Area Path (Team Fallback)
+                                <span class="help-icon" data-help="Used when the area CSV is missing or the requester email is not found">ℹ️</span>
                             </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="ticketTypes" value="All" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">All Types</span>
-                            </label>
+                            <div class="ado-fetch-row">
+                                <button type="button" id="load-area-paths-btn" class="btn btn-secondary btn-sm">
+                                    Load area paths from ADO
+                                </button>
+                                <span id="load-area-paths-status" class="ado-fetch-status" aria-live="polite"></span>
+                            </div>
+                            <select id="defaultAreaPathSelect" class="form-select ado-path-select" aria-label="Select area path">
+                                <option value="">— Select area path or type below —</option>
+                            </select>
+                            <input
+                                type="text"
+                                id="defaultAreaPath"
+                                name="defaultAreaPath"
+                                class="form-input"
+                                placeholder="Engineering\InfoSec"
+                            >
                         </div>
                     </div>
                 </div>
@@ -146,63 +241,49 @@
             <!-- SAST Ticket Filters Section -->
             <section class="config-section nested" data-section="sast" data-expanded="false">
                 <header class="section-header">
-                    <span class="section-icon">📊</span>
+                    <span class="section-icon" aria-hidden="true">📊</span>
                     <h4 class="section-title">SAST Ticket Filters</h4>
                     <button type="button" class="toggle-section" aria-label="Toggle section">
                         <span class="toggle-icon">▼</span>
                     </button>
                 </header>
                 <div class="section-content">
-                    <div class="form-group">
-                        <label class="form-label">
-                            SAST Severities
-                            <span class="help-icon" data-help="Select severities for SAST ticket creation">ℹ️</span>
-                        </label>
-                        <div class="checkbox-group severity-group">
-                            <label class="checkbox-label severity-critical">
-                                <input type="checkbox" name="sastSeverities" value="Critical" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="severity-badge critical">Critical</span>
+                    <div class="section-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="sastSeverities-trigger">
+                                SAST Severities
+                                <span class="help-icon" data-help="Select one or more severities for SAST ticket creation">ℹ️</span>
                             </label>
-                            <label class="checkbox-label severity-high">
-                                <input type="checkbox" name="sastSeverities" value="High" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="severity-badge high">High</span>
-                            </label>
-                            <label class="checkbox-label severity-medium">
-                                <input type="checkbox" name="sastSeverities" value="Medium" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="severity-badge medium">Medium</span>
-                            </label>
-                            <label class="checkbox-label severity-low">
-                                <input type="checkbox" name="sastSeverities" value="Low" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="severity-badge low">Low</span>
-                            </label>
+                            <div class="multi-select" data-name="sastSeverities">
+                                <button type="button" id="sastSeverities-trigger" class="multi-select-trigger" aria-expanded="false" aria-haspopup="listbox">
+                                    <span class="multi-select-summary"></span>
+                                    <span class="multi-select-chevron" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="multi-select-panel" role="listbox" aria-multiselectable="true" hidden>
+                                    <label class="multi-select-option severity-critical"><input type="checkbox" name="sastSeverities" value="Critical" class="checkbox-input" checked><span>Critical</span></label>
+                                    <label class="multi-select-option severity-high"><input type="checkbox" name="sastSeverities" value="High" class="checkbox-input" checked><span>High</span></label>
+                                    <label class="multi-select-option severity-medium"><input type="checkbox" name="sastSeverities" value="Medium" class="checkbox-input"><span>Medium</span></label>
+                                    <label class="multi-select-option severity-low"><input type="checkbox" name="sastSeverities" value="Low" class="checkbox-input"><span>Low</span></label>
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="form-group">
-                        <label class="form-label">
-                            SAST Confidences
-                            <span class="help-icon" data-help="Select confidence levels for SAST ticket creation">ℹ️</span>
-                        </label>
-                        <div class="checkbox-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="sastConfidences" value="High" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">High</span>
+                        <div class="form-group">
+                            <label class="form-label" for="sastConfidences-trigger">
+                                SAST Confidences
+                                <span class="help-icon" data-help="Select one or more confidence levels for SAST ticket creation">ℹ️</span>
                             </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="sastConfidences" value="Medium" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">Medium</span>
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="sastConfidences" value="Low" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">Low</span>
-                            </label>
+                            <div class="multi-select" data-name="sastConfidences">
+                                <button type="button" id="sastConfidences-trigger" class="multi-select-trigger" aria-expanded="false" aria-haspopup="listbox">
+                                    <span class="multi-select-summary"></span>
+                                    <span class="multi-select-chevron" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="multi-select-panel" role="listbox" aria-multiselectable="true" hidden>
+                                    <label class="multi-select-option"><input type="checkbox" name="sastConfidences" value="High" class="checkbox-input" checked><span>High</span></label>
+                                    <label class="multi-select-option"><input type="checkbox" name="sastConfidences" value="Medium" class="checkbox-input" checked><span>Medium</span></label>
+                                    <label class="multi-select-option"><input type="checkbox" name="sastConfidences" value="Low" class="checkbox-input"><span>Low</span></label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -211,73 +292,51 @@
             <!-- SCA Ticket Filters Section -->
             <section class="config-section nested" data-section="sca" data-expanded="false">
                 <header class="section-header">
-                    <span class="section-icon">🔗</span>
+                    <span class="section-icon" aria-hidden="true">🔗</span>
                     <h4 class="section-title">SCA Ticket Filters</h4>
                     <button type="button" class="toggle-section" aria-label="Toggle section">
                         <span class="toggle-icon">▼</span>
                     </button>
                 </header>
                 <div class="section-content">
-                    <div class="form-group">
-                        <label class="form-label">
-                            SCA Severities
-                            <span class="help-icon" data-help="Select severities for SCA ticket creation">ℹ️</span>
-                        </label>
-                        <div class="checkbox-group severity-group">
-                            <label class="checkbox-label severity-critical">
-                                <input type="checkbox" name="scaSeverities" value="Critical" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="severity-badge critical">Critical</span>
+                    <div class="section-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="scaSeverities-trigger">
+                                SCA Severities
+                                <span class="help-icon" data-help="Select one or more severities for SCA ticket creation">ℹ️</span>
                             </label>
-                            <label class="checkbox-label severity-high">
-                                <input type="checkbox" name="scaSeverities" value="High" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="severity-badge high">High</span>
-                            </label>
-                            <label class="checkbox-label severity-medium">
-                                <input type="checkbox" name="scaSeverities" value="Medium" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="severity-badge medium">Medium</span>
-                            </label>
-                            <label class="checkbox-label severity-low">
-                                <input type="checkbox" name="scaSeverities" value="Low" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="severity-badge low">Low</span>
-                            </label>
+                            <div class="multi-select" data-name="scaSeverities">
+                                <button type="button" id="scaSeverities-trigger" class="multi-select-trigger" aria-expanded="false" aria-haspopup="listbox">
+                                    <span class="multi-select-summary"></span>
+                                    <span class="multi-select-chevron" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="multi-select-panel" role="listbox" aria-multiselectable="true" hidden>
+                                    <label class="multi-select-option severity-critical"><input type="checkbox" name="scaSeverities" value="Critical" class="checkbox-input" checked><span>Critical</span></label>
+                                    <label class="multi-select-option severity-high"><input type="checkbox" name="scaSeverities" value="High" class="checkbox-input" checked><span>High</span></label>
+                                    <label class="multi-select-option severity-medium"><input type="checkbox" name="scaSeverities" value="Medium" class="checkbox-input"><span>Medium</span></label>
+                                    <label class="multi-select-option severity-low"><input type="checkbox" name="scaSeverities" value="Low" class="checkbox-input"><span>Low</span></label>
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="form-group">
-                        <label class="form-label">
-                            SCA Reachabilities
-                            <span class="help-icon" data-help="Select reachability types for SCA ticket creation">ℹ️</span>
-                        </label>
-                        <div class="checkbox-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="scaReachabilities" value="Always Reachable" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">Always Reachable</span>
+                        <div class="form-group">
+                            <label class="form-label" for="scaReachabilities-trigger">
+                                SCA Reachabilities
+                                <span class="help-icon" data-help="Select one or more reachability types for SCA ticket creation">ℹ️</span>
                             </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="scaReachabilities" value="Reachable" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">Reachable</span>
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="scaReachabilities" value="Conditionally Reachable" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">Conditionally Reachable</span>
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="scaReachabilities" value="Direct" class="checkbox-input" checked>
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">Direct</span>
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="scaReachabilities" value="Transitive" class="checkbox-input">
-                                <span class="checkbox-custom"></span>
-                                <span class="checkbox-text">Transitive</span>
-                            </label>
+                            <div class="multi-select" data-name="scaReachabilities">
+                                <button type="button" id="scaReachabilities-trigger" class="multi-select-trigger" aria-expanded="false" aria-haspopup="listbox">
+                                    <span class="multi-select-summary"></span>
+                                    <span class="multi-select-chevron" aria-hidden="true">▾</span>
+                                </button>
+                                <div class="multi-select-panel" role="listbox" aria-multiselectable="true" hidden>
+                                    <label class="multi-select-option"><input type="checkbox" name="scaReachabilities" value="Always Reachable" class="checkbox-input" checked><span>Always Reachable</span></label>
+                                    <label class="multi-select-option"><input type="checkbox" name="scaReachabilities" value="Reachable" class="checkbox-input" checked><span>Reachable</span></label>
+                                    <label class="multi-select-option"><input type="checkbox" name="scaReachabilities" value="Conditionally Reachable" class="checkbox-input"><span>Conditionally Reachable</span></label>
+                                    <label class="multi-select-option"><input type="checkbox" name="scaReachabilities" value="Direct" class="checkbox-input" checked><span>Direct</span></label>
+                                    <label class="multi-select-option"><input type="checkbox" name="scaReachabilities" value="Transitive" class="checkbox-input"><span>Transitive</span></label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -286,7 +345,7 @@
             <!-- License Configuration Section -->
             <section class="config-section nested" data-section="license" data-expanded="false">
                 <header class="section-header">
-                    <span class="section-icon">📜</span>
+                    <span class="section-icon" aria-hidden="true">📜</span>
                     <h4 class="section-title">License Configuration</h4>
                     <button type="button" class="toggle-section" aria-label="Toggle section">
                         <span class="toggle-icon">▼</span>
@@ -295,10 +354,10 @@
                 <div class="section-content">
                     <div class="form-group">
                         <label class="toggle-label">
-                            <input 
-                                type="checkbox" 
-                                id="useDefaultLicenseWhitelist" 
-                                name="useDefaultLicenseWhitelist" 
+                            <input
+                                type="checkbox"
+                                id="useDefaultLicenseWhitelist"
+                                name="useDefaultLicenseWhitelist"
                                 class="toggle-input"
                                 checked
                             >
@@ -313,10 +372,10 @@
                             Additional/Override Licenses
                             <span class="help-icon" data-help="Additional licenses to add to whitelist (comma or newline separated). If 'Use Default License Whitelist' is false, this becomes the complete whitelist.">ℹ️</span>
                         </label>
-                        <textarea 
-                            id="licenseWhitelistOverride" 
-                            name="licenseWhitelistOverride" 
-                            class="form-textarea" 
+                        <textarea
+                            id="licenseWhitelistOverride"
+                            name="licenseWhitelistOverride"
+                            class="form-textarea"
                             rows="4"
                             placeholder="Enter additional licenses (comma or newline separated)"
                             maxlength="2000"
@@ -329,198 +388,82 @@
             <!-- Summary & PR Section -->
             <section class="config-section" data-section="summary" data-expanded="false">
                 <header class="section-header">
-                    <span class="section-icon">📊</span>
+                    <span class="section-icon" aria-hidden="true">📊</span>
                     <h3 class="section-title">Summary & PR</h3>
                     <button type="button" class="toggle-section" aria-label="Toggle section">
                         <span class="toggle-icon">▼</span>
                     </button>
                 </header>
                 <div class="section-content">
-                    <div class="form-group">
-                        <label class="toggle-label">
-                            <input 
-                                type="checkbox" 
-                                id="generateSummary" 
-                                name="generateSummary" 
-                                class="toggle-input"
-                                checked
+                    <div class="section-grid">
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input
+                                    type="checkbox"
+                                    id="generateSummary"
+                                    name="generateSummary"
+                                    class="toggle-input"
+                                    checked
+                                >
+                                <span class="toggle-switch"></span>
+                                <span class="toggle-text">Generate Summary Report</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group conditional" data-show="generateSummary == true">
+                            <label for="summaryDisplayMode" class="form-label">
+                                Summary Display Mode
+                                <span class="help-icon" data-help="Where to display the summary report">ℹ️</span>
+                            </label>
+                            <select id="summaryDisplayMode" name="summaryDisplayMode" class="form-select">
+                                <option value="Logs Only">Pipeline Logs Only</option>
+                                <option value="Tab Only">Pipeline Tab Only</option>
+                                <option value="Both" selected>Both Logs and Tab</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input
+                                    type="checkbox"
+                                    id="createFixPR"
+                                    name="createFixPR"
+                                    class="toggle-input"
+                                >
+                                <span class="toggle-switch"></span>
+                                <span class="toggle-text">Create Fix PR</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group conditional" data-show="createFixPR == true">
+                            <label for="fixPRBranchPrefix" class="form-label">
+                                Fix PR Branch Prefix
+                                <span class="help-icon" data-help="Prefix for branches created for fix PRs">ℹ️</span>
+                            </label>
+                            <input
+                                type="text"
+                                id="fixPRBranchPrefix"
+                                name="fixPRBranchPrefix"
+                                class="form-input"
+                                value="semgrep-fixes/"
+                                placeholder="semgrep-fixes/"
                             >
-                            <span class="toggle-switch"></span>
-                            <span class="toggle-text">Generate Summary Report</span>
-                        </label>
-                        <span class="help-text">Generate detailed summary report with vulnerability information</span>
-                    </div>
+                        </div>
 
-                    <div class="form-group conditional" data-show="generateSummary == true">
-                        <label for="summaryDisplayMode" class="form-label">
-                            Summary Display Mode
-                            <span class="help-icon" data-help="Where to display the summary report">ℹ️</span>
-                        </label>
-                        <select id="summaryDisplayMode" name="summaryDisplayMode" class="form-select">
-                            <option value="Logs Only">Pipeline Logs Only</option>
-                            <option value="Tab Only">Pipeline Tab Only</option>
-                            <option value="Both" selected>Both Logs and Tab</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="toggle-label">
-                            <input 
-                                type="checkbox" 
-                                id="createFixPR" 
-                                name="createFixPR" 
-                                class="toggle-input"
-                            >
-                            <span class="toggle-switch"></span>
-                            <span class="toggle-text">Create Fix PR</span>
-                        </label>
-                        <span class="help-text">Create pull requests with auto-fixes for findings</span>
-                    </div>
-
-                    <div class="form-group conditional" data-show="createFixPR == true">
-                        <label for="fixPRBranchPrefix" class="form-label">
-                            Fix PR Branch Prefix
-                            <span class="help-icon" data-help="Prefix for branches created for fix PRs">ℹ️</span>
-                        </label>
-                        <input 
-                            type="text" 
-                            id="fixPRBranchPrefix" 
-                            name="fixPRBranchPrefix" 
-                            class="form-input" 
-                            value="semgrep-fixes/"
-                            placeholder="semgrep-fixes/"
-                        >
-                    </div>
-
-                    <div class="form-group conditional" data-show="createFixPR == true">
-                        <label class="toggle-label">
-                            <input 
-                                type="checkbox" 
-                                id="groupFixPRsByType" 
-                                name="groupFixPRsByType" 
-                                class="toggle-input"
-                                checked
-                            >
-                            <span class="toggle-switch"></span>
-                            <span class="toggle-text">Group Fix PRs by Type</span>
-                        </label>
-                        <span class="help-text">Group multiple fixes into one PR per rule type (SAST, SCA, etc.)</span>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Advanced Configuration Section -->
-            <section class="config-section" data-section="advanced" data-expanded="false">
-                <header class="section-header">
-                    <span class="section-icon">⚙️</span>
-                    <h3 class="section-title">Advanced Configuration</h3>
-                    <button type="button" class="toggle-section" aria-label="Toggle section">
-                        <span class="toggle-icon">▼</span>
-                    </button>
-                </header>
-                <div class="section-content">
-                    <div class="form-group">
-                        <label for="deploymentId" class="form-label">
-                            Deployment ID <span class="required">*</span>
-                            <span class="help-icon" data-help="Semgrep deployment ID (static for Fareportal: 15145)">ℹ️</span>
-                        </label>
-                        <input 
-                            type="text" 
-                            id="deploymentId" 
-                            name="deploymentId" 
-                            class="form-input" 
-                            value="15145"
-                            required
-                        >
-                        <span class="error-message" id="deploymentId-error" role="alert" aria-live="polite"></span>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="iterationListCsvUrl" class="form-label">
-                            Iteration List CSV URL
-                            <span class="help-icon" data-help="URL to download iteration list CSV for sprint mapping">ℹ️</span>
-                        </label>
-                        <input 
-                            type="url" 
-                            id="iterationListCsvUrl" 
-                            name="iterationListCsvUrl" 
-                            class="form-input" 
-                            value="https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=iterationlist.csv&api-version=6.0&download=true"
-                            placeholder="CSV URL for iteration list"
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label for="azureDevPathCsvUrl" class="form-label">
-                            Azure DevOps Path CSV URL
-                            <span class="help-icon" data-help="URL to download Azure DevOps area path mapping CSV">ℹ️</span>
-                        </label>
-                        <input 
-                            type="url" 
-                            id="azureDevPathCsvUrl" 
-                            name="azureDevPathCsvUrl" 
-                            class="form-input" 
-                            value="https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=azuredevpath.csv&api-version=6.0&download=true"
-                            placeholder="CSV URL for area path mapping"
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label for="defaultIterationPath" class="form-label">
-                            Default Iteration Path
-                            <span class="help-icon" data-help="Fallback iteration path if CSV is unavailable">ℹ️</span>
-                        </label>
-                        <input 
-                            type="text" 
-                            id="defaultIterationPath" 
-                            name="defaultIterationPath" 
-                            class="form-input" 
-                            value="Engineering\\2025-Sprints"
-                            placeholder="Engineering\\2025-Sprints"
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label for="logLevel" class="form-label">
-                            Log Level
-                            <span class="help-icon" data-help="Logging level for the extension">ℹ️</span>
-                        </label>
-                        <select id="logLevel" name="logLevel" class="form-select">
-                            <option value="DEBUG">DEBUG</option>
-                            <option value="INFO" selected>INFO</option>
-                            <option value="WARNING">WARNING</option>
-                            <option value="ERROR">ERROR</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="customRuleFilters" class="form-label">
-                            Custom Rule Filters
-                            <span class="help-icon" data-help="Comma or newline-separated list of rule names to include/exclude. Use '-' prefix to exclude (e.g., '-rule.name'). Leave empty to include all rules.">ℹ️</span>
-                        </label>
-                        <textarea 
-                            id="customRuleFilters" 
-                            name="customRuleFilters" 
-                            class="form-textarea" 
-                            rows="3"
-                            placeholder="Enter rule names (comma or newline separated). Use '-' prefix to exclude."
-                            maxlength="1000"
-                        ></textarea>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="toggle-label">
-                            <input 
-                                type="checkbox" 
-                                id="enableMetrics" 
-                                name="enableMetrics" 
-                                class="toggle-input"
-                                checked
-                            >
-                            <span class="toggle-switch"></span>
-                            <span class="toggle-text">Enable Metrics Collection</span>
-                        </label>
-                        <span class="help-text">Collect and report metrics about scan execution, ticket creation, and PR creation</span>
+                        <div class="form-group conditional span-full" data-show="createFixPR == true">
+                            <label class="toggle-label">
+                                <input
+                                    type="checkbox"
+                                    id="groupFixPRsByType"
+                                    name="groupFixPRsByType"
+                                    class="toggle-input"
+                                    checked
+                                >
+                                <span class="toggle-switch"></span>
+                                <span class="toggle-text">Group Fix PRs by Type</span>
+                            </label>
+                            <span class="help-text">Group multiple fixes into one PR per rule type (SAST, SCA, etc.)</span>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -528,7 +471,8 @@
             <!-- Form Actions -->
             <div class="form-actions">
                 <div class="form-actions-left">
-                    <button type="button" id="export-btn" class="btn btn-secondary" title="Export configuration (Ctrl+E)">📥 Export</button>
+                    <button type="button" id="export-yaml-btn" class="btn btn-secondary" title="Copy full azure-pipelines.yml to clipboard">📋 Copy Pipeline YAML</button>
+                    <button type="button" id="export-btn" class="btn btn-secondary" title="Export configuration (Ctrl+E)">📥 Export JSON</button>
                     <button type="button" id="import-btn" class="btn btn-secondary" title="Import configuration">📤 Import</button>
                 </div>
                 <div class="form-actions-right">
@@ -539,7 +483,6 @@
             </div>
         </form>
 
-        <!-- Tooltip Container -->
         <div id="tooltip" class="tooltip" role="tooltip"></div>
     </div>
 

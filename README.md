@@ -42,12 +42,10 @@ Auto-Fix PR generation and summary configuration
 - **SAST**: Filter by severity (Critical, High, Medium, Low) and confidence (High, Medium, Low)
 - **SCA**: Filter by severity and reachability (Always Reachable, Reachable, Direct, Transitive)
 - **License**: Global default whitelist with override option for approved licenses
-- **Custom Rules**: Include/exclude specific rules via configuration
 
 ### Enterprise Features
 - ✅ **Advanced Error Recovery**: Automatic retry with exponential backoff, rate limit handling
 - ⚡ **Performance Optimizations**: Deployment slug caching, batch API calls
-- 📈 **Metrics & Reporting**: Comprehensive metrics collection and reporting
 - 🛡️ **Partial Failure Handling**: Continues processing even if some operations fail
 
 ### 🎨 Beautiful UI (Version 1.1.0+)
@@ -77,29 +75,127 @@ Auto-Fix PR generation and summary configuration
 5. Select the `.vsix` file
 6. Accept the terms and install
 
+## 🔐 Before you set up the pipeline — Library variable group
+
+**Never put tokens in `azure-pipelines.yml`.** Create a variable group in **Pipelines → Library** before configuring the task or exporting YAML.
+
+### Step 1 — Create the `Semgrep` variable group
+
+1. In Azure DevOps, go to **Pipelines → Library**
+2. Click **+ Variable group**
+3. Name it **`Semgrep`** (must match the YAML below)
+4. Add these **secret** variables (click the lock icon for each):
+
+| Variable | Value | Secret? |
+|----------|--------|---------|
+| `semgrep_token` | Your Semgrep API token | ✅ Yes |
+| `adoPat` | Azure DevOps PAT (Work Items Read & Write scope) | ✅ Yes |
+
+5. Save the variable group
+6. Under **Pipeline permissions**, allow your pipeline to use this group
+
+### Step 2 — Reference the group in YAML
+
+Use **Copy Pipeline YAML** in **Project → Semgrep → Scan Configuration**, or start from this template:
+
+```yaml
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+- group: Semgrep
+
+steps:
+
+- bash: |
+    echo "Verifying System.AccessToken..."
+    if [ -z "$SYSTEM_ACCESSTOKEN" ]; then
+      echo "System.AccessToken is not available"
+      exit 1
+    fi
+    echo "System.AccessToken is available"
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+- task: SemgrepSecurityScan@1
+  inputs:
+    semgrepAppToken: '$(semgrep_token)'
+    scanType: 'Full Scan'
+
+    # PAT from Library variable group Semgrep
+    adoPat: '$(adoPat)'
+
+    adoOrganization: 'your-org'
+    adoProject: 'YourProject'
+    adoTeam: 'YourTeam'
+
+    sastSeverities: 'Critical,High,Medium,Low'
+    sastConfidences: 'High,Medium,Low'
+    scaSeverities: 'Critical,High,Medium,Low'
+    scaReachabilities: 'Always Reachable,Reachable,Conditionally Reachable,Direct,Transitive'
+
+    deploymentId: '36268'
+    logLevel: 'DEBUG'
+```
+
+Azure DevOps replaces `$(semgrep_token)` and `$(adoPat)` with the secret values when the pipeline runs. Values are **masked in logs** and **not committed** to the repo.
+
+### Step 3 — Pipeline editor (optional)
+
+If you configure the task in the native pipeline UI instead of YAML, type the **macros** in the token fields:
+
+```text
+$(semgrep_token)
+$(adoPat)
+```
+
+### ❌ Do not do this
+
+```yaml
+semgrepAppToken: '2709ac75898d5f771e4c33bb4fc05a1253cab50dc3fef21cf07a024c843828f3'  # NEVER
+```
+
+Use **Copy Pipeline YAML** in the Semgrep config hub — it always emits `'$(semgrep_token)'` and `'$(adoPat)'`, never raw secrets.
+
+---
+
 ## 🚀 Usage
 
 ### Basic Configuration
 
 ```yaml
+variables:
+- group: Semgrep
+
+steps:
 - task: SemgrepSecurityScan@1
   displayName: 'Semgrep Security Scan'
   inputs:
-    semgrepAppToken: '$(SEMGREP_APP_TOKEN)'  # Store as secure variable
-    scanType: 'PR Scan'                       # or 'Full Scan'
-    deploymentId: '12345'                     # Static change according to your organization
+    semgrepAppToken: '$(semgrep_token)'
+    adoPat: '$(adoPat)'
+    scanType: 'PR Scan'
+    deploymentId: '36268'
 ```
 
 ### Full Configuration Example
 
 ```yaml
+variables:
+- group: Semgrep
+
+steps:
 - task: SemgrepSecurityScan@1
   displayName: 'Semgrep Security Scan'
   inputs:
-    # Scan Configuration
-    semgrepAppToken: '$(SEMGREP_APP_TOKEN)'
+    semgrepAppToken: '$(semgrep_token)'
+    adoPat: '$(adoPat)'
     scanType: 'PR Scan'
     baselineRef: 'origin/master'
+    deploymentId: '36268'
+    logLevel: 'INFO'
     
     # Ticket Creation
     enableTicketCreation: true
@@ -130,10 +226,14 @@ Auto-Fix PR generation and summary configuration
 ### Scan Configuration
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `semgrepAppToken` | string | ✅ Yes | - | Semgrep API token (store as secure variable) |
-| `scanType` | pickList | ✅ Yes | "PR Scan" | "PR Scan" or "Full Scan" |
+| `deploymentId` | string | ✅ Yes | - | Semgrep Cloud deployment ID |
+| `scanType` | pickList | ✅ Yes | "Full Scan" | "PR Scan" or "Full Scan" |
 | `baselineRef` | string | No | "origin/master" | Baseline reference for PR scans |
-| `semgrepOrg` | string | No | - | Semgrep organization (optional) |
+| `semgrepAppToken` | string | ✅ Yes | - | Library secret `semgrep_token` — use `'$(semgrep_token)'` in YAML |
+| `adoPat` | string | No | - | Library secret `adoPat` — use `'$(adoPat)'` in YAML |
+| `adoOrganization` | string | No | - | Azure DevOps organization for ticket routing |
+| `adoProject` | string | No | - | Azure DevOps project for ticket routing |
+| `logLevel` | pickList | No | "INFO" | DEBUG, INFO, WARNING, ERROR |
 
 ### Ticket Creation
 | Parameter | Type | Required | Default | Description |
@@ -168,16 +268,22 @@ Auto-Fix PR generation and summary configuration
 | `fixPRBranchPrefix` | string | No | "semgrep-fixes/" | Branch prefix for fix PRs |
 | `groupFixPRsByType` | boolean | No | true | Group fixes by rule type |
 
-### Advanced Configuration
+### Work Item Routing
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `deploymentId` | string | ✅ Yes | "12345" | Semgrep deployment ID (static change according to your organization) |
-| `iterationListCsvUrl` | string | No | - | URL to iteration list CSV |
-| `azureDevPathCsvUrl` | string | No | - | URL to area path mapping CSV |
-| `defaultIterationPath` | string | No | "Engineering\\2025-Sprints" | Fallback iteration path |
-| `logLevel` | pickList | No | "INFO" | DEBUG, INFO, WARNING, ERROR |
-| `enableMetrics` | boolean | No | true | Enable metrics collection |
-| `customRuleFilters` | multiLine | No | - | Custom rule filters (include/exclude) |
+| `useAdoIterationApi` | boolean | No | true | Fetch current sprint from Azure DevOps API |
+| `adoTeam` | string | No | - | Team for iteration lookup (e.g. Engineering) |
+| `defaultIterationPath` | string | No | - | Fallback iteration path if API lookup fails |
+| `defaultAreaPath` | string | No | - | Fallback area path for work items |
+
+When **Enable Ticket Creation** is on, configure routing in **Project → Semgrep → Scan Configuration** or in YAML. The recommended approach is to enable **Fetch Current Sprint from Azure DevOps API** and set fallback iteration/area paths from **Project Settings → Teams**.
+
+| Field | Where to find it |
+|-------|------------------|
+| `defaultIterationPath` | Project Settings → Teams → **Iterations** |
+| `defaultAreaPath` | Project Settings → Project configuration → **Areas** |
+
+---
 
 ## 📊 Outputs
 

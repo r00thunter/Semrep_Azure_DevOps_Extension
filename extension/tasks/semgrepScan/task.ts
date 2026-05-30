@@ -5,17 +5,9 @@ import * as fs from 'fs';
 async function run() {
     try {
         // Get input parameters
-        // Auto-fetch from variable library 'Semgrep_Variables' if not provided
-        const semgrepAppTokenInput = tl.getInput('semgrepAppToken', false);
-        const semgrepAppToken: string = semgrepAppTokenInput || process.env.SEMGREP_APP_TOKEN || '';
-        if (!semgrepAppToken) {
-            throw new Error('Semgrep App Token is required. Please provide it as input or in variable library "Semgrep_Variables" as SEMGREP_APP_TOKEN.');
-        }
+        const semgrepAppToken: string = tl.getInput('semgrepAppToken', true)!;
         const scanType: string = tl.getInput('scanType', true)!;
-        // Use SEMGREP_BRANCH from variable library if baselineRef not provided
-        const baselineRefInput = tl.getInput('baselineRef', false);
-        const baselineRef: string = baselineRefInput || process.env.SEMGREP_BRANCH || process.env.BUILD_SOURCEBRANCHNAME || 'origin/master';
-        const semgrepOrg: string = tl.getInput('semgrepOrg', false) || process.env.SEMGREP_ORG || '';
+        const baselineRef: string = tl.getInput('baselineRef', false) || 'origin/master';
         
         // Ticket creation parameters
         const enableTicketCreation: boolean = tl.getBoolInput('enableTicketCreation', false) || false;
@@ -42,32 +34,38 @@ async function run() {
         
         // Advanced configuration
         const deploymentId: string = tl.getInput('deploymentId', true)!;
-        const iterationListCsvUrl: string = tl.getInput('iterationListCsvUrl', false) || '';
-        const azureDevPathCsvUrl: string = tl.getInput('azureDevPathCsvUrl', false) || '';
-        const defaultIterationPath: string = tl.getInput('defaultIterationPath', false) || 'Engineering\\2025-Sprints';
+        const defaultIterationPath: string = tl.getInput('defaultIterationPath', false) || '';
+        const defaultAreaPath: string = tl.getInput('defaultAreaPath', false) || '';
+        const useAdoIterationApi: boolean = tl.getBoolInput('useAdoIterationApi', false) !== false;
+        const adoPat: string = tl.getInput('adoPat', false) || '';
+        const adoOrganization: string = tl.getInput('adoOrganization', false) || '';
+        const adoProject: string = tl.getInput('adoProject', false) || '';
+        const adoTeam: string = tl.getInput('adoTeam', false) || '';
         const logLevel: string = tl.getInput('logLevel', false) || 'INFO';
         
         // Set log level
         process.env.LOG_LEVEL = logLevel;
         
-        // Set Semgrep token
+        // Set Semgrep token (task input + INPUT_* for Python scripts)
         process.env.SEMGREP_APP_TOKEN = semgrepAppToken;
+        process.env.INPUT_SEMGREPAPPTOKEN = semgrepAppToken;
         
         // Get Azure DevOps environment variables
-        // Prefer variables from 'Semgrep_Variables' library if available
-        const buildRepoName = process.env.SEMGREP_REPO_NAME || process.env.BUILD_REPOSITORY_NAME || '';
+        const buildRepoName = process.env.BUILD_REPOSITORY_NAME || '';
         const systemCollectionUri = process.env.SYSTEM_COLLECTIONURI || '';
         const systemTeamProjectId = process.env.SYSTEM_TEAMPROJECTID || '';
         const buildRepositoryId = process.env.BUILD_REPOSITORY_ID || '';
-        const buildRepositoryUri = process.env.SEMGREP_REPO_URL || process.env.BUILD_REPOSITORY_URI || '';
+        const buildRepositoryUri = process.env.BUILD_REPOSITORY_URI || '';
         const buildRequestedForEmail = process.env.BUILD_REQUESTEDFOREMAIL || '';
         const pipelineStartTime = process.env.SYSTEM_PIPELINESTARTTIME || '';
         const pullRequestId = process.env.SYSTEM_PULLREQUEST_PULLREQUESTID || '0';
-        const sourceBranchName = process.env.SEMGREP_BRANCH || process.env.BUILD_SOURCEBRANCHNAME || '';
-        // SYSTEM_ACCESSTOKEN from variable library takes precedence
+        const sourceBranchName = process.env.BUILD_SOURCEBRANCHNAME || '';
         const systemAccessToken = process.env.SYSTEM_ACCESSTOKEN || '';
-        // SEMGREP_WEBAPP_TOKEN from variable library (if needed)
-        const semgrepWebappToken = process.env.SEMGREP_WEBAPP_TOKEN || '';
+        
+        // adoPat input may be $(System.AccessToken) — use expanded value, else fall back to OAuth token
+        const resolvedAdoPat = adoPat || systemAccessToken;
+        process.env.INPUT_ADOPAT = resolvedAdoPat;
+        process.env.ADO_PAT = resolvedAdoPat;
         
         // Set environment variables for Python scripts
         process.env.BUILD_REPOSITORY_NAME = buildRepoName;
@@ -80,15 +78,9 @@ async function run() {
         process.env.SYSTEM_PULLREQUEST_PULLREQUESTID = pullRequestId;
         process.env.BUILD_SOURCEBRANCHNAME = sourceBranchName;
         process.env.SYSTEM_ACCESSTOKEN = systemAccessToken;
-        if (semgrepWebappToken) {
-            process.env.SEMGREP_WEBAPP_TOKEN = semgrepWebappToken;
-        }
         process.env.DEPLOYMENT_ID = deploymentId;
         process.env.SCAN_TYPE = scanType;
         process.env.BASELINE_REF = baselineRef;
-        if (semgrepOrg) {
-            process.env.SEMGREP_ORG = semgrepOrg;
-        }
         
         // Set ticket creation parameters
         process.env.ENABLE_TICKET_CREATION = enableTicketCreation.toString();
@@ -107,10 +99,13 @@ async function run() {
         process.env.FIX_PR_BRANCH_PREFIX = fixPRBranchPrefix;
         process.env.GROUP_FIX_PRS_BY_TYPE = groupFixPRsByType.toString();
         
-        // Set CSV URLs
-        process.env.ITERATION_LIST_CSV_URL = iterationListCsvUrl;
-        process.env.AZURE_DEV_PATH_CSV_URL = azureDevPathCsvUrl;
+        // Set routing parameters
         process.env.DEFAULT_ITERATION_PATH = defaultIterationPath;
+        process.env.DEFAULT_AREA_PATH = defaultAreaPath;
+        process.env.USE_ADO_ITERATION_API = useAdoIterationApi.toString();
+        process.env.ADO_ORGANIZATION = adoOrganization;
+        process.env.ADO_PROJECT = adoProject;
+        process.env.ADO_TEAM = adoTeam;
         
         // Get task directory and scripts path
         // In Azure DevOps tasks, the task directory is where task.js is located
@@ -158,8 +153,11 @@ async function run() {
         tl.debug(`Summary generation: ${generateSummary ? 'enabled' : 'disabled'}`);
 
         // Validate required environment variables
-        if (!systemAccessToken && enableTicketCreation) {
-            tl.warning('SYSTEM_ACCESSTOKEN not found. Ticket creation may fail. Enable "Allow scripts to access OAuth token" in pipeline options.');
+        if (!resolvedAdoPat && enableTicketCreation) {
+            tl.warning(
+                'No adoPat / System.AccessToken available. Set adoPat: $(System.AccessToken) in YAML ' +
+                'and enable "Allow scripts to access OAuth token", or provide adoPat as a PAT.'
+            );
         }
 
         // Step 1: Execute scan
@@ -198,6 +196,8 @@ async function run() {
                 } catch (parseError) {
                     tl.debug(`Could not parse findings.json: ${parseError}`);
                 }
+                process.env.FINDINGS_JSON_PATH = actualFindingsPath;
+                tl.debug(`FINDINGS_JSON_PATH=${actualFindingsPath}`);
             } else {
                 tl.debug('Findings.json not found in expected locations (this may be normal for some scan types)');
             }
@@ -226,7 +226,7 @@ async function run() {
                         });
                     
                     tl.setProgress(60, 'Ticket creation completed');
-                    console.log('✅ Work items created successfully');
+                    console.log('✅ Ticket creation step finished (see TOTAL_WORK_ITEMS_CREATED in logs)');
                     
                 } catch (error: any) {
                     // Ticket creation failures are non-critical - log but continue

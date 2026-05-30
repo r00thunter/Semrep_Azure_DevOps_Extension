@@ -4,13 +4,13 @@
   "name": "SemgrepSecurityScan",
   "friendlyName": "Semgrep Security Scan",
   "description": "Comprehensive security scanning with Semgrep including SAST, SCA, and License compliance with configurable ticket creation and auto-fix PR capabilities",
-  "helpMarkDown": "[Learn more about this task](https://github.com/fareportal/semgrep-ado-ext)",
+  "helpMarkDown": "**Visual configurator (dropdowns, YAML export):** open **Project → Semgrep → Scan Configuration** in the left sidebar.\n\n**Before setup:** create Library variable group **Semgrep** with secrets **semgrep_token** and **adoPat**.\n\n[Marketplace documentation](https://marketplace.visualstudio.com/items?itemName=YashMishrar00thunter.semgrep-security-scan)",
   "category": "Security",
-  "author": "Fareportal",
+  "author": "Yash Mishra",
   "version": {
     "Major": 1,
-    "Minor": 1,
-    "Patch": 7
+    "Minor": 2,
+    "Patch": 17
   },
   "instanceNameFormat": "Semgrep Security Scan",
   "icon": "icon.png",
@@ -46,26 +46,26 @@
       "isExpanded": false
     },
     {
-      "name": "advanced",
-      "displayName": "Advanced Configuration",
+      "name": "routing",
+      "displayName": "Work Item Routing Setup",
       "isExpanded": false
     }
   ],
   "inputs": [
     {
-      "name": "semgrepAppToken",
+      "name": "deploymentId",
       "type": "string",
-      "label": "Semgrep App Token",
+      "label": "Deployment ID",
       "defaultValue": "",
-      "required": false,
-      "helpMarkDown": "Your Semgrep API token. If not provided, will be auto-fetched from variable library 'Semgrep_Variables' (SEMGREP_APP_TOKEN).",
+      "required": true,
+      "helpMarkDown": "Your Semgrep Cloud deployment ID. Find it in Semgrep AppSec Platform → Settings → General.",
       "groupName": "scan"
     },
     {
       "name": "scanType",
       "type": "pickList",
       "label": "Scan Type",
-      "defaultValue": "PR Scan",
+      "defaultValue": "Full Scan",
       "required": true,
       "helpMarkDown": "Choose between PR Scan (differential) or Full Scan",
       "options": {
@@ -78,19 +78,61 @@
       "name": "baselineRef",
       "type": "string",
       "label": "Baseline Reference",
-      "defaultValue": "",
+      "defaultValue": "origin/master",
       "required": false,
-      "helpMarkDown": "Git reference to use as baseline for PR scans. If not provided, will use SEMGREP_BRANCH from variable library 'Semgrep_Variables' (defaults to $(Build.SourceBranchName)).",
+      "helpMarkDown": "Git reference to use as baseline for PR scans (default: origin/master)",
       "groupName": "scan",
-      "visibleRule": "scanType == 'PR Scan'"
+      "visibleRule": "scanType = PR Scan"
     },
     {
-      "name": "semgrepOrg",
+      "name": "semgrepAppToken",
       "type": "string",
-      "label": "Semgrep Organization",
+      "label": "Semgrep App Token",
+      "defaultValue": "",
+      "required": true,
+      "helpMarkDown": "Store in Library group **Semgrep** as secret **semgrep_token**. In YAML: `semgrepAppToken: '$(semgrep_token)'`.",
+      "groupName": "scan"
+    },
+    {
+      "name": "adoPat",
+      "type": "string",
+      "label": "Azure DevOps PAT",
       "defaultValue": "",
       "required": false,
-      "helpMarkDown": "Semgrep organization name (optional, will be auto-fetched from token or variable library if not provided)",
+      "helpMarkDown": "Store in Library group **Semgrep** as secret **adoPat**. In YAML: `adoPat: '$(adoPat)'`.",
+      "groupName": "scan"
+    },
+    {
+      "name": "adoOrganization",
+      "type": "string",
+      "label": "Azure DevOps Organization",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Azure DevOps organization (e.g. soshield-inc). Required for ticket routing.",
+      "groupName": "scan"
+    },
+    {
+      "name": "adoProject",
+      "type": "string",
+      "label": "Azure DevOps Project",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Azure DevOps project (e.g. Engineering). Required for ticket routing.",
+      "groupName": "scan"
+    },
+    {
+      "name": "logLevel",
+      "type": "pickList",
+      "label": "Log Level",
+      "defaultValue": "INFO",
+      "required": false,
+      "helpMarkDown": "Logging level for the extension",
+      "options": {
+        "DEBUG": "DEBUG",
+        "INFO": "INFO",
+        "WARNING": "WARNING",
+        "ERROR": "ERROR"
+      },
       "groupName": "scan"
     },
     {
@@ -104,83 +146,91 @@
     },
     {
       "name": "ticketTypes",
-      "type": "multiSelect",
+      "type": "pickList",
       "label": "Ticket Types",
       "defaultValue": "All",
       "required": false,
-      "helpMarkDown": "Select which types of tickets to create",
+      "helpMarkDown": "Which finding types should create work items. For multi-select dropdowns use **Project → Semgrep → Scan Configuration**.",
       "options": {
-        "SAST": "SAST (Source Code Analysis)",
-        "SCA": "SCA (Supply Chain Analysis)",
-        "License": "License Compliance",
-        "All": "All Types"
+        "All": "All types (SAST + SCA + License)",
+        "SAST": "SAST only",
+        "SCA": "SCA only",
+        "License": "License only",
+        "SAST,SCA": "SAST + SCA",
+        "SAST,License": "SAST + License",
+        "SCA,License": "SCA + License"
       },
       "groupName": "tickets",
-      "visibleRule": "enableTicketCreation == true"
+      "visibleRule": "enableTicketCreation = true"
     },
     {
       "name": "sastSeverities",
-      "type": "multiSelect",
+      "type": "pickList",
       "label": "SAST Severities",
       "defaultValue": "Critical,High",
       "required": false,
-      "helpMarkDown": "Select severities for SAST ticket creation",
+      "helpMarkDown": "Severity filter for SAST tickets. Visual multi-select: **Project → Semgrep → Scan Configuration**.",
       "options": {
-        "Critical": "Critical",
-        "High": "High",
-        "Medium": "Medium",
-        "Low": "Low"
+        "Critical,High": "Critical + High (recommended)",
+        "Critical,High,Medium": "Critical + High + Medium",
+        "Critical,High,Medium,Low": "All severities",
+        "Critical": "Critical only",
+        "High": "High only",
+        "Medium": "Medium only",
+        "Low": "Low only"
       },
       "groupName": "sast",
-      "visibleRule": "enableTicketCreation == true"
+      "visibleRule": "enableTicketCreation = true"
     },
     {
       "name": "sastConfidences",
-      "type": "multiSelect",
+      "type": "pickList",
       "label": "SAST Confidences",
       "defaultValue": "High,Medium",
       "required": false,
-      "helpMarkDown": "Select confidence levels for SAST ticket creation",
+      "helpMarkDown": "Confidence filter for SAST tickets.",
       "options": {
-        "High": "High",
-        "Medium": "Medium",
-        "Low": "Low"
+        "High,Medium": "High + Medium (recommended)",
+        "High,Medium,Low": "All confidence levels",
+        "High": "High only",
+        "Medium": "Medium only",
+        "Low": "Low only"
       },
       "groupName": "sast",
-      "visibleRule": "enableTicketCreation == true"
+      "visibleRule": "enableTicketCreation = true"
     },
     {
       "name": "scaSeverities",
-      "type": "multiSelect",
+      "type": "pickList",
       "label": "SCA Severities",
       "defaultValue": "Critical,High",
       "required": false,
-      "helpMarkDown": "Select severities for SCA ticket creation",
+      "helpMarkDown": "Severity filter for SCA tickets.",
       "options": {
-        "Critical": "Critical",
-        "High": "High",
-        "Medium": "Medium",
-        "Low": "Low"
+        "Critical,High": "Critical + High (recommended)",
+        "Critical,High,Medium": "Critical + High + Medium",
+        "Critical,High,Medium,Low": "All severities",
+        "Critical": "Critical only"
       },
       "groupName": "sca",
-      "visibleRule": "enableTicketCreation == true"
+      "visibleRule": "enableTicketCreation = true"
     },
     {
       "name": "scaReachabilities",
-      "type": "multiSelect",
+      "type": "pickList",
       "label": "SCA Reachabilities",
       "defaultValue": "Always Reachable,Reachable,Direct",
       "required": false,
-      "helpMarkDown": "Select reachability types for SCA ticket creation",
+      "helpMarkDown": "Reachability filter for SCA tickets.",
       "options": {
-        "Always Reachable": "Always Reachable",
-        "Reachable": "Reachable",
-        "Conditionally Reachable": "Conditionally Reachable",
-        "Direct": "Direct",
-        "Transitive": "Transitive"
+        "Always Reachable,Reachable,Direct": "Always Reachable + Reachable + Direct (recommended)",
+        "Always Reachable,Reachable,Conditionally Reachable,Direct,Transitive": "All reachability types",
+        "Always Reachable,Reachable": "Always Reachable + Reachable",
+        "Direct,Transitive": "Direct + Transitive",
+        "Direct": "Direct only"
       },
       "groupName": "sca",
-      "visibleRule": "enableTicketCreation == true"
+      "visibleRule": "enableTicketCreation = true"
     },
     {
       "name": "useDefaultLicenseWhitelist",
@@ -190,7 +240,7 @@
       "required": false,
       "helpMarkDown": "Use the default approved licenses list",
       "groupName": "license",
-      "visibleRule": "enableTicketCreation == true"
+      "visibleRule": "enableTicketCreation = true"
     },
     {
       "name": "licenseWhitelistOverride",
@@ -200,7 +250,7 @@
       "required": false,
       "helpMarkDown": "Additional licenses to add to whitelist (comma or newline separated). If 'Use Default License Whitelist' is false, this becomes the complete whitelist.",
       "groupName": "license",
-      "visibleRule": "enableTicketCreation == true"
+      "visibleRule": "enableTicketCreation = true"
     },
     {
       "name": "generateSummary",
@@ -224,7 +274,7 @@
         "Both": "Both Logs and Tab"
       },
       "groupName": "summary",
-      "visibleRule": "generateSummary == true"
+      "visibleRule": "generateSummary = true"
     },
     {
       "name": "createFixPR",
@@ -243,7 +293,7 @@
       "required": false,
       "helpMarkDown": "Prefix for branches created for fix PRs",
       "groupName": "summary",
-      "visibleRule": "createFixPR == true"
+      "visibleRule": "createFixPR = true"
     },
     {
       "name": "groupFixPRsByType",
@@ -253,80 +303,51 @@
       "required": false,
       "helpMarkDown": "Group multiple fixes into one PR per rule type (SAST, SCA, etc.)",
       "groupName": "summary",
-      "visibleRule": "createFixPR == true"
+      "visibleRule": "createFixPR = true"
     },
     {
-      "name": "deploymentId",
-      "type": "string",
-      "label": "Deployment ID",
-      "defaultValue": "15145",
-      "required": true,
-      "helpMarkDown": "Semgrep deployment ID (static for Fareportal: 15145)",
-      "groupName": "advanced"
-    },
-    {
-      "name": "iterationListCsvUrl",
-      "type": "string",
-      "label": "Iteration List CSV URL",
-      "defaultValue": "https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=iterationlist.csv&api-version=6.0&download=true",
+      "name": "useAdoIterationApi",
+      "type": "boolean",
+      "label": "Fetch Current Sprint from Azure DevOps API",
+      "defaultValue": true,
       "required": false,
-      "helpMarkDown": "URL to download iteration list CSV for sprint mapping",
-      "groupName": "advanced"
+      "helpMarkDown": "When enabled, fetches the current sprint iteration path from Azure DevOps team settings (recommended). Falls back to Default Iteration Path if the API call fails.",
+      "groupName": "routing",
+      "visibleRule": "enableTicketCreation = true"
     },
     {
-      "name": "azureDevPathCsvUrl",
+      "name": "adoTeam",
       "type": "string",
-      "label": "Azure DevOps Path CSV URL",
-      "defaultValue": "https://dev.azure.com/fareportal/Engineering/_apis/git/repositories/infosec-devareapath/items?path=azuredevpath.csv&api-version=6.0&download=true",
+      "label": "Azure DevOps Team",
+      "defaultValue": "",
       "required": false,
-      "helpMarkDown": "URL to download Azure DevOps area path mapping CSV",
-      "groupName": "advanced"
+      "helpMarkDown": "Team used for sprint/iteration lookup (e.g. Engineering). Auto-detected from project teams if empty.",
+      "groupName": "routing",
+      "visibleRule": "enableTicketCreation = true"
     },
     {
       "name": "defaultIterationPath",
       "type": "string",
-      "label": "Default Iteration Path",
-      "defaultValue": "Engineering\\2025-Sprints",
-      "required": false,
-      "helpMarkDown": "Fallback iteration path if CSV is unavailable",
-      "groupName": "advanced"
-    },
-    {
-      "name": "logLevel",
-      "type": "pickList",
-      "label": "Log Level",
-      "defaultValue": "INFO",
-      "required": false,
-      "helpMarkDown": "Logging level for the extension",
-      "options": {
-        "DEBUG": "DEBUG",
-        "INFO": "INFO",
-        "WARNING": "WARNING",
-        "ERROR": "ERROR"
-      },
-      "groupName": "advanced"
-    },
-    {
-      "name": "customRuleFilters",
-      "type": "multiLine",
-      "label": "Custom Rule Filters",
+      "label": "Default Iteration Path (Sprint Fallback)",
       "defaultValue": "",
       "required": false,
-      "helpMarkDown": "Comma or newline-separated list of rule names to include/exclude. Use '-' prefix to exclude (e.g., '-rule.name'). Leave empty to include all rules.",
-      "groupName": "advanced"
+      "helpMarkDown": "Fallback iteration path when ADO API lookup fails. Use format Engineering\\Iteration\\Sprint 1 (no leading backslash). Copy from Project Settings → Teams → Iterations.",
+      "groupName": "routing",
+      "visibleRule": "enableTicketCreation = true"
     },
     {
-      "name": "enableMetrics",
-      "type": "boolean",
-      "label": "Enable Metrics Collection",
-      "defaultValue": true,
+      "name": "defaultAreaPath",
+      "type": "string",
+      "label": "Default Area Path (Team Fallback)",
+      "defaultValue": "",
       "required": false,
-      "helpMarkDown": "Collect and report metrics about scan execution, ticket creation, and PR creation",
-      "groupName": "advanced"
+      "helpMarkDown": "Fallback area path for work items. Example: `Engineering\\InfoSec`.",
+      "groupName": "routing",
+      "visibleRule": "enableTicketCreation = true"
     }
   ],
   "execution": {
-    "Node": {
+    "Node16": {
       "target": "task.js"
     }
   },

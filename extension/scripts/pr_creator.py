@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from api_utils import ado_auth_tuple
+
 
 def _log_level() -> int:
     lvl = os.getenv("LOG_LEVEL", "INFO").upper().strip()
@@ -49,10 +51,7 @@ def _requests_session() -> requests.Session:
 
 
 def _ado_auth() -> Tuple[str, str]:
-    token = os.getenv("SYSTEM_ACCESSTOKEN", "")
-    if not token:
-        raise RuntimeError("SYSTEM_ACCESSTOKEN is missing. Enable 'Allow scripts to access OAuth token'.")
-    return ("", token)
+    return ado_auth_tuple()
 
 
 def get_deployment_slug(session: requests.Session, token: str) -> str:
@@ -503,7 +502,10 @@ def main():
             logger.error("SEMGREP_APP_TOKEN is not set")
             sys.exit(1)
         
-        deployment_id = os.getenv("DEPLOYMENT_ID", "15145")
+        deployment_id = os.getenv("DEPLOYMENT_ID", "").strip()
+        if not deployment_id:
+            logger.error("DEPLOYMENT_ID is not set")
+            sys.exit(1)
         repo_name = os.getenv("BUILD_REPOSITORY_NAME", "")
         branch_name = os.getenv("BUILD_SOURCEBRANCHNAME", "")
         branch_prefix = os.getenv("FIX_PR_BRANCH_PREFIX", "semgrep-fixes/")

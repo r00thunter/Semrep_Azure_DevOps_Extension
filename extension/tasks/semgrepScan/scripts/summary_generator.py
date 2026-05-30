@@ -26,7 +26,14 @@ import requests
 
 # Import shared utilities
 try:
-    from api_utils import DeploymentSlugCache, retry_with_backoff, handle_partial_failures
+    from api_utils import (
+        DeploymentSlugCache,
+        extract_semgrep_findings,
+        git_branch_ref,
+        resolve_semgrep_repo_name,
+        retry_with_backoff,
+        handle_partial_failures,
+    )
     from metrics import get_metrics_collector
 except ImportError:
     # Fallback if utilities not available
@@ -110,9 +117,9 @@ def get_findings(
     params = {
         "issue_type": issue_type,
         "repos": repo_name,
-        "ref": f"refs/heads/{branch_name}" if branch_name else None,
+        "ref": git_branch_ref(branch_name),
         "dedup": "true",
-        "page_size": 3000  # Get as many as possible
+        "page_size": 3000
     }
     
     # Remove None values
@@ -136,14 +143,7 @@ def get_findings(
         while True:
             resp = fetch_page(page)
             data = resp.json()
-            
-            # Extract findings based on issue type
-            if issue_type == "sast":
-                findings_data = data.get("sastFindings", {})
-            else:
-                findings_data = data.get("scaFindings", {})
-            
-            findings = findings_data.get("findings", [])
+            findings = extract_semgrep_findings(data, issue_type)
             if not findings:
                 break
             
@@ -503,7 +503,10 @@ def main():
             logger.error("SEMGREP_APP_TOKEN is not set")
             sys.exit(1)
         
-        deployment_id = os.getenv("DEPLOYMENT_ID", "15145")
+        deployment_id = os.getenv("DEPLOYMENT_ID", "").strip()
+        if not deployment_id:
+            logger.error("DEPLOYMENT_ID is not set")
+            sys.exit(1)
         repo_name = os.getenv("BUILD_REPOSITORY_NAME", "")
         branch_name = os.getenv("BUILD_SOURCEBRANCHNAME", "")
         summary_display_mode = os.getenv("SUMMARY_DISPLAY_MODE", "Both")
@@ -519,18 +522,23 @@ def main():
         
         # Get deployment slug (with caching)
         deployment_slug = get_deployment_slug(session, token)
+        ado_org = os.getenv("ADO_ORGANIZATION", "").strip()
+        ado_project = os.getenv("ADO_PROJECT", "").strip() or os.getenv("SYSTEM_TEAMPROJECT", "").strip()
+        semgrep_repo = resolve_semgrep_repo_name(
+            session, token, deployment_slug, ado_org, ado_project, repo_name
+        )
         
         # Fetch findings (with retry and partial failure handling)
         logger.info("Fetching SAST findings...")
         try:
-            sast_findings = get_findings(session, token, deployment_slug, repo_name, branch_name, "sast")
+            sast_findings = get_findings(session, token, deployment_slug, semgrep_repo, branch_name, "sast")
         except Exception as e:
             logger.error(f"Failed to fetch SAST findings: {e}")
             sast_findings = []  # Continue with empty list (partial failure)
         
         logger.info("Fetching SCA findings...")
         try:
-            sca_findings = get_findings(session, token, deployment_slug, repo_name, branch_name, "sca")
+            sca_findings = get_findings(session, token, deployment_slug, semgrep_repo, branch_name, "sca")
         except Exception as e:
             logger.error(f"Failed to fetch SCA findings: {e}")
             sca_findings = []  # Continue with empty list (partial failure)

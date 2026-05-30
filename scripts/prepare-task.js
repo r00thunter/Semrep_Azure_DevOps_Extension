@@ -4,6 +4,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const sourceTaskDir = path.join(__dirname, '..', 'extension', 'tasks', 'semgrepScan');
 const targetTaskDir = path.join(__dirname, '..', 'semgrepScan');
@@ -48,6 +49,18 @@ function copyRecursiveSync(src, dest) {
 try {
     copyRecursiveSync(sourceTaskDir, targetTaskDir);
     console.log('✓ Task folder copied successfully to root level');
+
+    const taskPackageJson = path.join(targetTaskDir, 'package.json');
+    if (!fs.existsSync(taskPackageJson)) {
+        throw new Error(`package.json not found in task directory: ${taskPackageJson}`);
+    }
+
+    console.log('Installing task runtime dependencies...');
+    execSync('npm install --production --no-audit --no-fund', {
+        cwd: targetTaskDir,
+        stdio: 'inherit'
+    });
+    console.log('✓ Task runtime dependencies installed');
 } catch (error) {
     console.error('Error copying task folder:', error.message);
     process.exit(1);

@@ -1,0 +1,40 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+- group: Semgrep
+
+steps:
+
+- bash: |
+    echo "Verifying System.AccessToken..."
+    if [ -z "$SYSTEM_ACCESSTOKEN" ]; then
+      echo "System.AccessToken is not available"
+      exit 1
+    fi
+    echo "System.AccessToken is available"
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+- task: SemgrepSecurityScan@1
+  inputs:
+    semgrepAppToken: '$(semgrep_token)'
+    scanType: 'Full Scan'
+
+    # Option 1 - Use PAT from Variable Group
+    adoPat: '$(adoPat)'
+
+    adoOrganization: 'soshield-inc'
+    adoProject: 'Engineering'
+    adoTeam: 'Engineering Team'
+
+    sastSeverities: 'Critical,High,Medium,Low'
+    sastConfidences: 'High,Medium,Low'
+    scaSeverities: 'Critical,High,Medium,Low'
+    scaReachabilities: 'Always Reachable,Reachable,Conditionally Reachable,Direct,Transitive'
+
+    deploymentId: '36268'
+    logLevel: 'DEBUG'

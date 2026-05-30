@@ -257,3 +257,96 @@ def handle_partial_failures(
         logger.warning(f"Processed {len(successful)}/{len(items)} items successfully. {len(failed)} failed.")
     
     return successful, failed
+
+
+def resolve_ado_pat() -> str:
+    """
+    Resolve Azure DevOps auth token for REST calls.
+
+    Priority: INPUT_ADOPAT (task input, e.g. $(System.AccessToken)) → ADO_PAT → SYSTEM_ACCESSTOKEN
+    """
+    for name in ("INPUT_ADOPAT", "ADO_PAT", "SYSTEM_ACCESSTOKEN"):
+        value = os.getenv(name, "").strip()
+        if value and not value.startswith("$("):
+            return value
+    raise RuntimeError(
+        "No Azure DevOps credentials found. Set adoPat: $(System.AccessToken) in pipeline YAML "
+        "and enable 'Allow scripts to access OAuth token' on the job, or provide adoPat as a PAT."
+    )
+
+
+def ado_auth_tuple() -> Tuple[str, str]:
+    """Return (username, password/token) for requests HTTP Basic auth against Azure DevOps."""
+    return ("", resolve_ado_pat())
+
+
+def extract_semgrep_findings(data: Dict[str, Any], issue_type: str) -> list:
+    """
+    Parse findings from Semgrep Cloud API responses.
+
+    Current API returns a top-level ``findings`` array; older responses nest under
+    ``sastFindings`` / ``scaFindings``.
+    """
+    if isinstance(data.get("findings"), list):
+        return data["findings"]
+    bucket_key = "sastFindings" if issue_type.lower() == "sast" else "scaFindings"
+    bucket = data.get(bucket_key)
+    if isinstance(bucket, dict) and isinstance(bucket.get("findings"), list):
+        return bucket["findings"]
+    return []
+
+
+def resolve_semgrep_repo_name(
+    session: requests.Session,
+    token: str,
+    deployment_slug: str,
+    ado_org: str,
+    ado_project: str,
+    repo_name: str,
+) -> str:
+    """
+    Resolve the Semgrep repository identifier (e.g. org/project/repo).
+
+    Semgrep registers Azure DevOps repos as ``{org}/{project}/{repo}``, not the
+    short ``BUILD_REPOSITORY_NAME`` alone.
+    """
+    explicit = os.getenv("SEMGREP_REPO_NAME", "").strip()
+    if explicit:
+        return explicit
+
+    candidates: list[str] = []
+    if ado_org and ado_project and repo_name:
+        candidates.append(f"{ado_org}/{ado_project}/{repo_name}")
+    if ado_org and repo_name:
+        candidates.append(f"{ado_org}/{repo_name}")
+    if repo_name:
+        candidates.append(repo_name)
+
+    headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+    for name in candidates:
+        url = f"https://semgrep.dev/api/v1/deployments/{deployment_slug}/projects/{name}"
+        try:
+            resp = session.get(url, headers=headers, timeout=30)
+            if resp.status_code == 200:
+                logger.info("Resolved Semgrep repository name: %s", name)
+                return name
+        except requests.RequestException as exc:
+            logger.debug("Semgrep repo probe failed for %s: %s", name, exc)
+
+    fallback = candidates[0] if candidates else repo_name
+    logger.warning(
+        "Could not verify Semgrep repo name via API; using %r. "
+        "Set SEMGREP_REPO_NAME to override.",
+        fallback,
+    )
+    return fallback
+
+
+def git_branch_ref(branch_name: str) -> Optional[str]:
+    """Convert BUILD_SOURCEBRANCHNAME to Semgrep ref format."""
+    branch = (branch_name or "").strip()
+    if not branch:
+        return None
+    if branch.startswith("refs/"):
+        return branch
+    return f"refs/heads/{branch}"

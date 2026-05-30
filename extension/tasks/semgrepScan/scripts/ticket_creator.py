@@ -36,6 +36,13 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import requests
 
+from api_utils import (
+    ado_auth_tuple,
+    extract_semgrep_findings,
+    git_branch_ref,
+    resolve_semgrep_repo_name,
+)
+
 
 DEFAULT_APPROVED_LICENSES: Set[str] = {
     "0BSD", "AFL-2.1", "AGPL-3.0", "Apache-2.0", "Artistic-2.0",
@@ -76,10 +83,255 @@ def _normalize_choice(s: str) -> str:
 
 
 def _ado_auth() -> Tuple[str, str]:
-    token = os.getenv("SYSTEM_ACCESSTOKEN", "")
-    if not token:
-        raise RuntimeError("SYSTEM_ACCESSTOKEN is missing. Enable 'Allow scripts to access OAuth token'.")
-    return ("", token)
+    return ado_auth_tuple()
+
+
+def _normalize_ado_path(path: str) -> str:
+    path = path.strip().replace("/", "\\")
+    while path.startswith("\\"):
+        path = path[1:]
+    return path
+
+
+def _parse_ado_org(collection_uri: str) -> str:
+    uri = (collection_uri or "").rstrip("/")
+    if "dev.azure.com/" in uri:
+        return uri.split("dev.azure.com/", 1)[1].split("/")[0]
+    if ".visualstudio.com" in uri:
+        return uri.split("//", 1)[1].split(".visualstudio.com", 1)[0]
+    return ""
+
+
+def _resolve_ado_org() -> str:
+    return os.getenv("ADO_ORGANIZATION", "").strip() or _parse_ado_org(
+        os.getenv("SYSTEM_COLLECTIONURI", "")
+    )
+
+
+def _resolve_ado_project() -> str:
+    return os.getenv("ADO_PROJECT", "").strip() or os.getenv("SYSTEM_TEAMPROJECT", "").strip()
+
+
+def _resolve_ado_team(session: requests.Session, org: str, project: str, auth: Tuple[str, str]) -> str:
+    configured = os.getenv("ADO_TEAM", "").strip()
+    if configured:
+        return configured
+    url = f"https://dev.azure.com/{org}/_apis/projects/{project}/teams?api-version=7.1"
+    try:
+        r = session.get(url, auth=auth, timeout=30)
+        r.raise_for_status()
+        teams = r.json().get("value") or []
+        if not teams:
+            return project
+        for team in teams:
+            if team.get("name") == project:
+                return project
+        name = teams[0].get("name") or project
+        logger.info("Auto-selected ADO team: %s", name)
+        return name
+    except Exception as e:
+        logger.warning("Could not list ADO teams, using project name: %s", e)
+        return project
+
+
+def _fetch_default_area_path(session: requests.Session, org: str, project: str, auth: Tuple[str, str]) -> str:
+    """Fetch project area root when defaultAreaPath is not configured."""
+    url = (
+        f"https://dev.azure.com/{org}/{project}/_apis/wit/classificationnodes/areas"
+        f"?$depth=2&api-version=7.1"
+    )
+    try:
+        r = session.get(url, auth=auth, timeout=30)
+        if r.status_code != 200:
+            return ""
+        data = r.json() or {}
+        root = _normalize_ado_path(data.get("path") or "")
+        children = data.get("children") or []
+        if children and children[0].get("path"):
+            return _normalize_ado_path(children[0]["path"])
+        return root
+    except Exception as e:
+        logger.warning("Failed to fetch default area path: %s", e)
+        return ""
+
+
+def _is_sca_cli_result(result: Dict[str, Any]) -> bool:
+    check_id = str(result.get("check_id") or "")
+    if check_id.startswith("ssc-") or check_id.startswith("supply-chain."):
+        return True
+    extra = result.get("extra") or {}
+    return bool(extra.get("sca-info") or extra.get("sca_info"))
+
+
+def _cli_result_to_finding(result: Dict[str, Any]) -> Dict[str, Any]:
+    extra = result.get("extra") or {}
+    meta = extra.get("metadata") or {}
+    start = result.get("start") or {}
+    end = result.get("end") or {}
+    sca_info = extra.get("sca-info") or extra.get("sca_info") or {}
+    return {
+        "severity": extra.get("severity") or meta.get("severity") or "medium",
+        "confidence": meta.get("confidence") or extra.get("confidence") or "medium",
+        "rule": {
+            "name": result.get("check_id") or "",
+            "message": extra.get("message") or "",
+            "confidence": meta.get("confidence") or extra.get("confidence"),
+        },
+        "rule_name": result.get("check_id") or "",
+        "rule_message": extra.get("message") or "",
+        "location": {
+            "file_path": result.get("path") or "",
+            "filePath": result.get("path") or "",
+            "line": start.get("line") or 1,
+            "column": start.get("col") or start.get("column") or 1,
+            "end_line": end.get("line") or start.get("line") or 1,
+        },
+        "reachability": sca_info.get("reachability") or "",
+        "relevant_since": extra.get("relevant_since") or "",
+        "id": result.get("fingerprint") or result.get("check_id"),
+    }
+
+
+def _load_findings_from_cli_json(path: str, issue_type: str) -> List[Dict[str, Any]]:
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning("Could not read findings file %s: %s", path, e)
+        return []
+
+    results = data.get("results") or []
+    want_sca = issue_type.lower() == "sca"
+    converted: List[Dict[str, Any]] = []
+    for result in results:
+        is_sca = _is_sca_cli_result(result)
+        if want_sca != is_sca:
+            continue
+        converted.append(_cli_result_to_finding(result))
+    if converted:
+        logger.info("Loaded %d %s finding(s) from %s", len(converted), issue_type.upper(), path)
+    return converted
+
+
+def _fetch_current_iteration_from_ado(
+    session: requests.Session,
+    org: str,
+    project: str,
+    team: str,
+    auth: Tuple[str, str],
+) -> Optional[str]:
+    """Fetch the current sprint iteration path from Azure DevOps team settings."""
+    url = (
+        f"https://dev.azure.com/{org}/{project}/{team}/_apis/work/teamsettings/iterations"
+        f"?$timeframe=current&api-version=7.1"
+    )
+    try:
+        r = session.get(url, auth=auth, timeout=30)
+        if r.status_code == 404:
+            logger.warning("Team iteration API returned 404 for team=%s", team)
+            return None
+        r.raise_for_status()
+        iterations = r.json().get("value") or []
+        if iterations:
+            path = iterations[0].get("path") or iterations[0].get("name")
+            if path:
+                logger.info("Current sprint from ADO API: %s", path)
+                return _normalize_ado_path(path)
+    except Exception as e:
+        logger.warning("Failed to fetch current iteration from team settings: %s", e)
+
+    # Fallback: all iterations with dates — pick the one containing today
+    url = (
+        f"https://dev.azure.com/{org}/{project}/{team}/_apis/work/teamsettings/iterations"
+        f"?api-version=7.1"
+    )
+    try:
+        r = session.get(url, auth=auth, timeout=30)
+        r.raise_for_status()
+        today = datetime.now(timezone.utc).date()
+        for item in r.json().get("value") or []:
+            attrs = item.get("attributes") or {}
+            start_raw = attrs.get("startDate")
+            finish_raw = attrs.get("finishDate")
+            if not start_raw or not finish_raw:
+                continue
+            start = datetime.fromisoformat(start_raw.replace("Z", "+00:00")).date()
+            finish = datetime.fromisoformat(finish_raw.replace("Z", "+00:00")).date()
+            if start <= today <= finish:
+                path = item.get("path") or item.get("name")
+                if path:
+                    logger.info("Matched sprint by date from ADO API: %s", path)
+                    return _normalize_ado_path(path)
+    except Exception as e:
+        logger.warning("Failed to match iteration by date: %s", e)
+
+    return None
+
+
+def _fetch_iteration_from_classification_nodes(
+    session: requests.Session,
+    org: str,
+    project: str,
+    auth: Tuple[str, str],
+) -> Optional[str]:
+    """List iteration nodes (no dates) — returns deepest leaf path as last resort."""
+    url = (
+        f"https://dev.azure.com/{org}/{project}/_apis/wit/classificationnodes/iterations"
+        f"?$depth=10&api-version=7.1"
+    )
+    try:
+        r = session.get(url, auth=auth, timeout=30)
+        r.raise_for_status()
+        deepest: Optional[str] = None
+        depth = -1
+
+        def walk(node: Dict[str, Any], level: int) -> None:
+            nonlocal deepest, depth
+            path = node.get("path") or ""
+            if path and not node.get("hasChildren") and level > depth:
+                deepest = path
+                depth = level
+            for child in node.get("children") or []:
+                walk(child, level + 1)
+
+        walk(r.json(), 0)
+        if deepest:
+            logger.info("Deepest iteration node from classification API: %s", deepest)
+            return _normalize_ado_path(deepest)
+    except Exception as e:
+        logger.warning("Failed to fetch iteration classification nodes: %s", e)
+    return None
+
+
+def _resolve_iteration_path(
+    session: requests.Session,
+    auth: Tuple[str, str],
+    default_iteration: str,
+    iter_csv_path: str,
+) -> str:
+    if _env_bool("USE_ADO_ITERATION_API", True):
+        org = _resolve_ado_org()
+        project = _resolve_ado_project()
+        if org and project:
+            team = _resolve_ado_team(session, org, project, auth)
+            path = _fetch_current_iteration_from_ado(session, org, project, team, auth)
+            if not path:
+                path = _fetch_iteration_from_classification_nodes(session, org, project, auth)
+            if path:
+                return path
+        else:
+            logger.warning(
+                "Skipping ADO iteration API (org=%r project=%r). Set adoOrganization/adoProject or run in a pipeline.",
+                org,
+                project,
+            )
+
+    if os.path.exists(iter_csv_path):
+        return _normalize_ado_path(_current_iteration_path(iter_csv_path, default_iteration))
+
+    return _normalize_ado_path(default_iteration)
 
 
 def _requests_session() -> requests.Session:
@@ -278,6 +530,19 @@ class AzureDevOpsClient:
             {"op": "add", "path": "/fields/System.Description", "value": html_description},
         ]
 
+        if not area_path or not iteration_path:
+            logger.error(
+                "Cannot create work item %r — missing area (%r) or iteration (%r)",
+                title,
+                area_path or "(empty)",
+                iteration_path or "(empty)",
+            )
+            return False
+
+        if _env_bool("TICKET_CREATION_DRY_RUN", False):
+            logger.info("[DRY RUN] Would create work item: %s", title)
+            return True
+
         # Link PR if available
         pr_id = (self.ctx.pr_id or "").strip()
         if pr_id and pr_id != "0":
@@ -302,6 +567,8 @@ class AzureDevOpsClient:
             timeout=30,
         )
         if r.status_code == 200:
+            wi_id = (r.json() or {}).get("id")
+            logger.info("Created work item #%s: %s", wi_id, title)
             return True
         logger.error("Work item create failed (%s): %s", r.status_code, r.text[:500])
         return False
@@ -312,7 +579,8 @@ class SemgrepClient:
         token = os.getenv("SEMGREP_APP_TOKEN", "").strip()
         if not token:
             raise RuntimeError("SEMGREP_APP_TOKEN missing")
-        self.deployment_id = os.getenv("DEPLOYMENT_ID", os.getenv("deploymentId", "15145")).strip() or "15145"
+        self.token = token
+        self.deployment_id = os.getenv("DEPLOYMENT_ID", os.getenv("deploymentId", "")).strip()
         self.sess = _requests_session()
         self.sess.headers.update(
             {
@@ -320,6 +588,7 @@ class SemgrepClient:
                 "Authorization": f"Bearer {token}",
             }
         )
+        self.deployment_slug = self.get_deployment_slug()
 
     def get_deployment_slug(self) -> str:
         r = self.sess.get("https://semgrep.dev/api/v1/deployments", timeout=30)
@@ -348,6 +617,7 @@ class SemgrepClient:
         Uses: GET /api/v1/deployments/{deploymentSlug}/findings
         Returns merged list from response {sastFindings|scaFindings}.findings
         """
+        page_size = max(100, min(page_size, 3000))
         findings: List[Dict[str, Any]] = []
         base = f"https://semgrep.dev/api/v1/deployments/{deployment_slug}/findings"
         issue_type = issue_type.lower()
@@ -375,18 +645,24 @@ class SemgrepClient:
             if r.status_code != 200:
                 raise RuntimeError(f"Findings API failed: {r.status_code} {r.text[:300]}")
             data = r.json() or {}
-            bucket = "sastFindings" if issue_type == "sast" else "scaFindings"
-            page_findings = ((data.get(bucket) or {}).get("findings") or []) if isinstance(data.get(bucket), dict) else []
+            page_findings = extract_semgrep_findings(data, issue_type)
             if not page_findings:
                 break
             findings.extend(page_findings)
             if len(page_findings) < page_size:
                 break
+        logger.info(
+            "Semgrep API returned %d %s finding(s) for repo=%r ref=%r",
+            len(findings),
+            issue_type.upper(),
+            repo_name,
+            ref,
+        )
         return findings
 
     # --- SBOM export (license) ---
     def request_sbom_export(self, repo_id: str, ref: Optional[str]) -> str:
-        url = f"https://semgrep.dev/api/v1/deployments/{self.deployment_id}/sbom/export"
+        url = f"https://semgrep.dev/api/v1/deployments/{self.deployment_slug}/sbom/export"
         payload: Dict[str, Any] = {"repositoryId": str(repo_id)}
         if ref:
             payload["ref"] = ref
@@ -399,7 +675,7 @@ class SemgrepClient:
         return token
 
     def poll_sbom_export_url(self, task_token: str, timeout_s: int = 180) -> str:
-        url = f"https://semgrep.dev/api/v1/deployments/{self.deployment_id}/sbom/export/{task_token}"
+        url = f"https://semgrep.dev/api/v1/deployments/{self.deployment_slug}/sbom/export/{task_token}"
         start = time.time()
         while time.time() - start < timeout_s:
             r = self.sess.get(url, timeout=30)
@@ -453,8 +729,10 @@ def _reachability_to_filters(values: Sequence[str]) -> Tuple[List[str], List[str
 
 
 def _should_create_by_time(pipeline_start: Optional[datetime], relevant_since: Optional[datetime]) -> bool:
+    scan_type = os.getenv("SCAN_TYPE", "").strip().lower()
+    if scan_type == "full scan":
+        return True
     if pipeline_start is None or relevant_since is None:
-        # If we cannot compare, allow creation (but rely on existing check).
         return True
     return relevant_since > pipeline_start
 
@@ -545,7 +823,16 @@ def _get_ado_context() -> AdoContext:
     )
 
 
-def create_sast_tickets(ado: AzureDevOpsClient, semgrep: SemgrepClient, slug: str, area: str, iteration: str) -> int:
+def create_sast_tickets(
+    ado: AzureDevOpsClient,
+    semgrep: SemgrepClient,
+    slug: str,
+    semgrep_repo: str,
+    area: str,
+    iteration: str,
+    branch_ref: Optional[str],
+    findings_json_path: str,
+) -> int:
     repo = ado.ctx.repo_name
     branch = ado.ctx.source_branch_name or "master"
 
@@ -554,16 +841,18 @@ def create_sast_tickets(ado: AzureDevOpsClient, semgrep: SemgrepClient, slug: st
     allowed_conf = {_normalize_choice(c) for c in confidences} if confidences else set()
     allowed_sev = {_normalize_choice(s) for s in severities} if severities else set()
 
-    findings = semgrep.list_findings(
-        deployment_slug=slug,
-        issue_type="sast",
-        repo_name=repo,
-        ref=None,
-        severities=severities or ["critical", "high", "medium", "low"],
-        confidence=None,  # we filter client-side because API is single confidence value
-        page_size=200,
-        max_pages=20,
-    )
+    findings = _load_findings_from_cli_json(findings_json_path, "sast")
+    if not findings:
+        findings = semgrep.list_findings(
+            deployment_slug=slug,
+            issue_type="sast",
+            repo_name=semgrep_repo,
+            ref=branch_ref,
+            severities=severities or ["critical", "high", "medium", "low"],
+            confidence=None,
+            page_size=200,
+            max_pages=20,
+        )
 
     grouped: Dict[str, Dict[str, Any]] = {}
     created = 0
@@ -639,7 +928,16 @@ def create_sast_tickets(ado: AzureDevOpsClient, semgrep: SemgrepClient, slug: st
     return created
 
 
-def create_sca_tickets(ado: AzureDevOpsClient, semgrep: SemgrepClient, slug: str, area: str, iteration: str) -> int:
+def create_sca_tickets(
+    ado: AzureDevOpsClient,
+    semgrep: SemgrepClient,
+    slug: str,
+    semgrep_repo: str,
+    area: str,
+    iteration: str,
+    branch_ref: Optional[str],
+    findings_json_path: str,
+) -> int:
     repo = ado.ctx.repo_name
     branch = ado.ctx.source_branch_name or "master"
 
@@ -647,18 +945,20 @@ def create_sca_tickets(ado: AzureDevOpsClient, semgrep: SemgrepClient, slug: str
     reach = _split_csvish(os.getenv("SCA_REACHABILITIES", "Always Reachable,Reachable,Direct"))
     exposures, transitivities = _reachability_to_filters(reach)
 
-    findings = semgrep.list_findings(
-        deployment_slug=slug,
-        issue_type="sca",
-        repo_name=repo,
-        ref=None,
-        severities=severities or ["critical", "high", "medium", "low"],
-        confidence=None,
-        exposures=exposures,
-        transitivities=transitivities,
-        page_size=200,
-        max_pages=20,
-    )
+    findings = _load_findings_from_cli_json(findings_json_path, "sca")
+    if not findings:
+        findings = semgrep.list_findings(
+            deployment_slug=slug,
+            issue_type="sca",
+            repo_name=semgrep_repo,
+            ref=branch_ref,
+            severities=severities or ["critical", "high", "medium", "low"],
+            confidence=None,
+            exposures=exposures,
+            transitivities=transitivities,
+            page_size=200,
+            max_pages=20,
+        )
 
     grouped: Dict[str, Dict[str, Any]] = {}
     created = 0
@@ -740,11 +1040,14 @@ def create_sca_tickets(ado: AzureDevOpsClient, semgrep: SemgrepClient, slug: str
     return created
 
 
-def create_license_tickets(ado: AzureDevOpsClient, semgrep: SemgrepClient, slug: str, area: str, iteration: str) -> int:
-    # Note: we need Semgrep repositoryId (numeric) to request SBOM.
-    # In your previous script, you fetched it from Semgrep project info endpoint.
-    # Here we re-use that approach via: GET /api/v1/deployments/{deploymentId}/projects/{project}
-    deployment_id = semgrep.deployment_id
+def create_license_tickets(
+    ado: AzureDevOpsClient,
+    semgrep: SemgrepClient,
+    slug: str,
+    semgrep_repo: str,
+    area: str,
+    iteration: str,
+) -> int:
     repo_name = ado.ctx.repo_name
     branch = ado.ctx.source_branch_name or "master"
 
@@ -753,8 +1056,7 @@ def create_license_tickets(ado: AzureDevOpsClient, semgrep: SemgrepClient, slug:
         logger.warning("License whitelist is empty; skipping license ticket creation.")
         return 0
 
-    # Fetch Semgrep project info to get repositoryId
-    proj_url = f"https://semgrep.dev/api/v1/deployments/{deployment_id}/projects/{repo_name}"
+    proj_url = f"https://semgrep.dev/api/v1/deployments/{slug}/projects/{semgrep_repo}"
     r = semgrep.sess.get(proj_url, timeout=60)
     if r.status_code != 200:
         logger.warning("Could not fetch Semgrep project info for license check (%s): %s", r.status_code, r.text[:300])
@@ -789,7 +1091,7 @@ def create_license_tickets(ado: AzureDevOpsClient, semgrep: SemgrepClient, slug:
         if not ado.check_existing_work_item(title, ado.ctx.repo_name, hint):
             continue
 
-        semgrep_url = f"https://semgrep.dev/api/agent/deployments/{deployment_id}/repos/{semgrep_repo_id}"
+        semgrep_url = f"https://semgrep.dev/orgs/{slug}/supply-chain/vulnerabilities?repo={semgrep_repo}&ref={branch}"
         body = _html_escape(
             f"Component {issue['component']} (version {issue['version']}) uses non-compliant license: {issue['license']}. "
             "Please review and replace or seek legal approval."
@@ -832,8 +1134,8 @@ def main() -> int:
     # Download CSV configs (optional)
     iter_url = os.getenv("ITERATION_LIST_CSV_URL", "").strip()
     area_url = os.getenv("AZURE_DEV_PATH_CSV_URL", "").strip()
-    default_iteration = os.getenv("DEFAULT_ITERATION_PATH", "Engineering\\2025-Sprints").strip()
-    default_area = "Engineering\\InfoSec\\DevSecOps\\SAST"
+    default_iteration = os.getenv("DEFAULT_ITERATION_PATH", "").strip()
+    default_area = os.getenv("DEFAULT_AREA_PATH", "").strip()
 
     tmp_iter = "iterationlist.csv"
     tmp_area = "azuredevpath.csv"
@@ -843,23 +1145,53 @@ def main() -> int:
     if area_url:
         _download_to_file(area_url, tmp_area, auth=auth)
 
-    iteration_path = _current_iteration_path(tmp_iter, default_iteration) if os.path.exists(tmp_iter) else default_iteration
-    area_path = _area_path(tmp_area, ctx.requested_for_email, default_area) if os.path.exists(tmp_area) else default_area
+    sess = _requests_session()
+    iteration_path = _resolve_iteration_path(sess, auth, default_iteration, tmp_iter)
+    area_path = _normalize_ado_path(
+        _area_path(tmp_area, ctx.requested_for_email, default_area) if os.path.exists(tmp_area) else default_area
+    )
 
-    logger.info("Using AreaPath=%s", area_path)
-    logger.info("Using IterationPath=%s", iteration_path)
+    org = _resolve_ado_org()
+    project = _resolve_ado_project()
+    if not area_path and org and project:
+        area_path = _fetch_default_area_path(sess, org, project, auth)
+
+    logger.info("Using AreaPath=%s", area_path or "(not configured)")
+    logger.info("Using IterationPath=%s", iteration_path or "(not configured)")
+    if not area_path or not iteration_path:
+        logger.warning(
+            "Area path or iteration path is not configured. Set defaultAreaPath/defaultIterationPath "
+            "and adoTeam (e.g. 'Engineering Team') in pipeline inputs."
+        )
 
     ado = AzureDevOpsClient(ctx)
     semgrep = SemgrepClient()
-    slug = semgrep.get_deployment_slug()
+    slug = semgrep.deployment_slug
+    semgrep_repo = resolve_semgrep_repo_name(
+        semgrep.sess,
+        semgrep.token,
+        slug,
+        org,
+        project,
+        ctx.repo_name,
+    )
+    branch_ref = git_branch_ref(ctx.source_branch_name)
+    findings_json_path = os.getenv("FINDINGS_JSON_PATH", "").strip()
 
     total_created = 0
     if "sast" in types:
-        total_created += create_sast_tickets(ado, semgrep, slug, area_path, iteration_path)
+        total_created += create_sast_tickets(
+            ado, semgrep, slug, semgrep_repo, area_path, iteration_path, branch_ref, findings_json_path
+        )
     if "sca" in types:
-        total_created += create_sca_tickets(ado, semgrep, slug, area_path, iteration_path)
+        total_created += create_sca_tickets(
+            ado, semgrep, slug, semgrep_repo, area_path, iteration_path, branch_ref, findings_json_path
+        )
     if "license" in types:
-        total_created += create_license_tickets(ado, semgrep, slug, area_path, iteration_path)
+        try:
+            total_created += create_license_tickets(ado, semgrep, slug, semgrep_repo, area_path, iteration_path)
+        except Exception as e:
+            logger.warning("License ticket creation skipped: %s", e)
 
     logger.info("Total work items created: %s", total_created)
     print(f"TOTAL_WORK_ITEMS_CREATED={total_created}")
